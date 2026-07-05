@@ -66,23 +66,32 @@ on:
         required: false
         type: string
         default: family
+      use_gmo_feed:
+        required: false
+        type: string
+        default: "true"
+      postgres_enabled:
+        required: false
+        type: string
+        default: "true"
     secrets:
       GH_USER:
-        required: true
+        required: false
       GH_CLASSIC_PAT:
-        required: true
+        required: false
       SONAR_TOKEN:
         required: false
     outputs:
       assembly_version:
-        value: ${{ jobs.build.outputs.assembly_version }}
+        value: ${{ jobs.build.outputs.assembly_version || jobs.build_no_postgres.outputs.assembly_version }}
       dll_version:
-        value: ${{ jobs.build.outputs.dll_version }}
+        value: ${{ jobs.build.outputs.dll_version || jobs.build_no_postgres.outputs.dll_version }}
       setup_changed:
-        value: ${{ jobs.build.outputs.setup_changed }}
+        value: ${{ jobs.build.outputs.setup_changed || jobs.build_no_postgres.outputs.setup_changed }}
 
 jobs:
   build:
+    if: inputs.postgres_enabled == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -130,6 +139,7 @@ jobs:
           dotnet-version: ${{ inputs.dotnet_version }}
 
       - name: Check NuGet auth for GMO feed
+        if: inputs.use_gmo_feed == 'true'
         run: |
           if [ -z "$GITHUB_PAT" ]; then
             echo "::error::GITHUB_PAT is empty. Add repository secret GH_CLASSIC_PAT (with read:packages)."
@@ -137,6 +147,178 @@ jobs:
           fi
 
       - name: Configure NuGet auth for GMO feed
+        if: inputs.use_gmo_feed == 'true'
+        run: dotnet nuget update source GMO --username "$GITHUB_USERNAME" --password "$GITHUB_PAT" --store-password-in-clear-text
+
+      - name: Generate appsettings.json for build
+        if: inputs.generate_appsettings_script != ''
+        run: bash "${{ inputs.generate_appsettings_script }}"
+
+      - name: Set version
+        id: setversion
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          YEAR=$(date +%Y)
+          MONTH=$(date +%m)
+          DAY=$(date +%d)
+          HHMM=$(date +%H%M)
+          ASSEMBLY_VERSION="$YEAR.$MONTH.$DAY.$HHMM"
+          if [ "$REF_NAME" = "$DEVELOPMENT_BRANCH" ]; then
+            DLL_VERSION="DEV-$YEAR$MONTH$DAY-$HHMM"
+          else
+            DLL_VERSION="$YEAR$MONTH$DAY-$HHMM"
+          fi
+          echo "ASSEMBLY_VERSION=$ASSEMBLY_VERSION" >> $GITHUB_ENV
+          echo "DLL_VERSION=$DLL_VERSION" >> $GITHUB_ENV
+          echo "assembly_version=$ASSEMBLY_VERSION" >> $GITHUB_OUTPUT
+          echo "dll_version=$DLL_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Install SonarScanner
+        if: env.SONAR_TOKEN != ''
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: SonarCloud begin
+        if: env.SONAR_TOKEN != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_EVENT_NAME: ${{ github.event_name }}
+          SONAR_PR_KEY: ${{ github.event.pull_request.number }}
+          SONAR_PR_BRANCH: ${{ github.head_ref }}
+          SONAR_PR_BASE: ${{ github.base_ref }}
+          SONAR_BRANCH: ${{ github.ref_name }}
+          SONAR_PROJECT_VERSION: ${{ env.DLL_VERSION }}
+          SONAR_ORGANIZATION: ${{ github.repository_owner }}
+          SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key != '' && inputs.sonar_project_key || format('{0}_{1}', github.repository_owner, github.event.repository.name) }}
+          SONAR_PROJECT_NAME: ${{ github.event.repository.name }}
+        run: |
+          EXCLUSIONS="${{ inputs.sonar_exclusions }}"
+          COVERAGE_EXCLUSIONS="${{ inputs.sonar_coverage_exclusions }}"
+          QG_WAIT="true"
+          if [ "$SONAR_EVENT_NAME" = "push" ] && [ "$SONAR_BRANCH" = "$PRODUCTION_BRANCH" ]; then
+            if curl -sf -X POST -u "${SONAR_TOKEN}:" \
+              "https://sonarcloud.io/api/project_branches/set_main?project=${SONAR_PROJECT_KEY}&branch=${PRODUCTION_BRANCH}"; then
+              echo "SonarCloud main branch aligned to GitHub ${PRODUCTION_BRANCH}"
+            else
+              echo "::warning::Could not set SonarCloud main branch. Skipping quality gate wait for this run."
+              QG_WAIT="false"
+            fi
+          fi
+          begin_args=(
+            "/k:${SONAR_PROJECT_KEY}"
+            "/o:${SONAR_ORGANIZATION}"
+            "/n:${SONAR_PROJECT_NAME}"
+            "/v:$SONAR_PROJECT_VERSION"
+            "/d:sonar.projectBaseDir=$GITHUB_WORKSPACE"
+            "/d:sonar.token=$SONAR_TOKEN"
+            "/d:sonar.host.url=https://sonarcloud.io"
+            "/d:sonar.qualitygate.wait=$QG_WAIT"
+            "/d:sonar.cs.opencover.reportsPaths=coverage/**/coverage.opencover.xml,**/TestResults/**/coverage.opencover.xml"
+            "/d:sonar.exclusions=$EXCLUSIONS"
+            "/d:sonar.coverage.exclusions=$COVERAGE_EXCLUSIONS"
+            "/d:sonar.cpd.exclusions=${{ inputs.sonar_cpd_exclusions }}"
+          )
+          if [ "$SONAR_EVENT_NAME" = "pull_request" ]; then
+            begin_args+=(
+              "/d:sonar.pullrequest.key=$SONAR_PR_KEY"
+              "/d:sonar.pullrequest.branch=$SONAR_PR_BRANCH"
+              "/d:sonar.pullrequest.base=$SONAR_PR_BASE"
+            )
+          else
+            begin_args+=("/d:sonar.branch.name=$SONAR_BRANCH")
+          fi
+          dotnet sonarscanner begin "${begin_args[@]}"
+
+      - name: Build
+        run: |
+          dotnet build "${{ inputs.solution_file }}" --verbosity normal \
+            -p:Version=${{ env.ASSEMBLY_VERSION }} \
+            -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} \
+            -p:FileVersion=${{ env.ASSEMBLY_VERSION }} \
+            -p:InformationalVersion=${{ env.DLL_VERSION }}
+
+      - name: Install Playwright Browsers
+        if: inputs.playwright_install_glob != ''
+        run: pwsh ${{ inputs.playwright_install_glob }} install --with-deps chromium
+
+      - name: Create working directory
+        run: mkdir -p working
+
+      - name: Test (all projects)
+        run: |
+          mkdir -p coverage
+          dotnet test "${{ inputs.solution_file }}" --no-build --verbosity normal \
+            --settings "$GITHUB_WORKSPACE/${{ inputs.coverlet_runsettings }}" \
+            --collect:"XPlat Code Coverage;Format=opencover" \
+            --results-directory "$GITHUB_WORKSPACE/coverage"
+
+      - name: SonarCloud end
+        if: env.SONAR_TOKEN != ''
+        run: dotnet sonarscanner end /d:sonar.token=$SONAR_TOKEN
+
+      - name: Upload coverage results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-results
+          path: |
+            coverage/**/coverage.opencover.xml
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Upload UI test artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ui-test-artifacts
+          path: working/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  build_no_postgres:
+    if: inputs.postgres_enabled != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GITHUB_USERNAME: ${{ secrets.GH_USER }}
+      GITHUB_PAT: ${{ secrets.GH_CLASSIC_PAT }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      PRODUCTION_BRANCH: ${{ inputs.production_branch }}
+      DEVELOPMENT_BRANCH: ${{ inputs.development_branch }}
+    outputs:
+      assembly_version: ${{ steps.setversion.outputs.assembly_version }}
+      dll_version: ${{ steps.setversion.outputs.dll_version }}
+      setup_changed: ${{ steps.filter.outputs.setup }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@6852f92c20ea7fd3b0c25de3b5112db3a98da050 # v3
+        if: github.event_name == 'push' && inputs.setup_paths_filter != ''
+        id: filter
+        with:
+          filters: |
+            setup:
+              - '${{ inputs.setup_paths_filter }}'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: ${{ inputs.dotnet_version }}
+
+      - name: Check NuGet auth for GMO feed
+        if: inputs.use_gmo_feed == 'true'
+        run: |
+          if [ -z "$GITHUB_PAT" ]; then
+            echo "::error::GITHUB_PAT is empty. Add repository secret GH_CLASSIC_PAT (with read:packages)."
+            exit 1
+          fi
+
+      - name: Configure NuGet auth for GMO feed
+        if: inputs.use_gmo_feed == 'true'
         run: dotnet nuget update source GMO --username "$GITHUB_USERNAME" --password "$GITHUB_PAT" --store-password-in-clear-text
 
       - name: Generate appsettings.json for build

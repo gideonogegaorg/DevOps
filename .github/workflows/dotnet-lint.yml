@@ -18,11 +18,15 @@ on:
         required: false
         type: string
         default: "true"
+      use_gmo_feed:
+        required: false
+        type: string
+        default: "true"
     secrets:
       GH_USER:
-        required: true
+        required: false
       GH_CLASSIC_PAT:
-        required: true
+        required: false
 
 jobs:
   lint:
@@ -49,6 +53,7 @@ jobs:
             exit 1
           fi
       - name: Configure NuGet auth for GMO feed
+        if: inputs.use_gmo_feed == 'true'
         run: dotnet nuget update source GMO --username "$GITHUB_USERNAME" --password "$GITHUB_PAT" --store-password-in-clear-text
       - name: Restore
         run: dotnet restore "${{ inputs.solution_file }}" --verbosity normal

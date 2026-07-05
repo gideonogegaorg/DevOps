@@ -66,17 +66,29 @@ on:
         required: false
         type: string
         default: ""
+      require_postgres:
+        required: false
+        type: string
+        default: "true"
+      deploy_env_lines:
+        required: false
+        type: string
+        default: ""
+      extra_deploy_dirs:
+        required: false
+        type: string
+        default: "uploads"
     secrets:
       DEPLOY_DOMAIN:
         required: false
       PG_USER:
-        required: true
+        required: false
       PG_PASS:
-        required: true
+        required: false
       GH_USER:
-        required: true
+        required: false
       GH_CLASSIC_PAT:
-        required: true
+        required: false
       REMOTE_HOST:
         required: true
       SSH_PRIVATE_KEY:
@@ -141,6 +153,8 @@ jobs:
           dotnet-version: ${{ inputs.dotnet_version }}
 
       - name: Validate deploy config
+        env:
+          REQUIRE_POSTGRES: ${{ inputs.require_postgres }}
         run: |
           if [ -z "$DEPLOY_PATH" ]; then
             echo "::error::DEPLOY_PATH is empty."
@@ -150,12 +164,13 @@ jobs:
             echo "::error::DEPLOY_PATH is invalid."
             exit 1
           fi
-          if [ -z "$PG_USER" ] || [ -z "$PG_PASS" ]; then
+          if [ "$REQUIRE_POSTGRES" = "true" ] && { [ -z "$PG_USER" ] || [ -z "$PG_PASS" ]; }; then
             echo "::error::Set PG_USER and PG_PASS secrets for this environment."
             exit 1
           fi
 
       - name: Generate appsettings.json for deploy
+        if: inputs.generate_appsettings_script != ''
         env:
           SERILOG_LOG_PATH: ${{ env.DEPLOY_PATH }}/logs
           UPLOADS_PATH: ${{ env.DEPLOY_PATH }}/uploads
@@ -222,6 +237,8 @@ jobs:
             SERVICE_NAME='${{ env.SERVICE_NAME }}'
             CERT_DOMAIN='${{ env.CERT_DOMAIN }}'
             IS_PRODUCTION='${{ env.IS_PRODUCTION }}'
+            DEPLOY_ENV_LINES='${{ inputs.deploy_env_lines }}'
+            EXTRA_DEPLOY_DIRS='${{ inputs.extra_deploy_dirs }}'
             STAGING="/tmp/${{ inputs.app_name }}-deploy-${{ github.run_id }}"
             CONFIG_SCRIPT="${{ inputs.configure_service_script }}"
             RUNTIME_SCRIPT="${{ inputs.install_runtime_script }}"
@@ -229,11 +246,24 @@ jobs:
             echo "[Deploy] Ensuring ASP.NET Core Runtime 10..."
             sudo bash "$STAGING/$RUNTIME_SCRIPT"
             echo "[Deploy] Ensuring directory..."
-            sudo mkdir -p "$DEPLOY_PATH/site" "$DEPLOY_PATH/logs" "$DEPLOY_PATH/uploads"
+            sudo mkdir -p "$DEPLOY_PATH/site" "$DEPLOY_PATH/logs"
+            if [ -n "$EXTRA_DEPLOY_DIRS" ]; then
+              IFS=',' read -ra DIRS <<< "$EXTRA_DEPLOY_DIRS"
+              for d in "${DIRS[@]}"; do
+                trimmed="${d// /}"
+                if [ -n "$trimmed" ]; then
+                  sudo mkdir -p "$DEPLOY_PATH/$trimmed"
+                fi
+              done
+            fi
             sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
             if [ "$SETUP_CHANGED" = "true" ] || [ ! -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
               echo "[Deploy] Running configure-service.sh..."
               sudo bash "$STAGING/$CONFIG_SCRIPT" "$FULL_HOSTNAME" "$PORT" "$SERVICE_NAME" "$CERT_DOMAIN" "$IS_PRODUCTION"
+            fi
+            if [ -n "$DEPLOY_ENV_LINES" ]; then
+              printf '%s\n' "$DEPLOY_ENV_LINES" > "$DEPLOY_PATH/.env"
+              chmod 600 "$DEPLOY_PATH/.env"
             fi
             echo "[Deploy] Copying site output..."
             cp -r "$STAGING/site/"* "$DEPLOY_PATH/site/"
