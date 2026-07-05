@@ -164,6 +164,14 @@ jobs:
             echo "::error::DEPLOY_PATH is invalid."
             exit 1
           fi
+          if [ -z "$PORT" ]; then
+            echo "::error::PORT is empty. Set the PORT variable on the GitHub environment (prod/dev) and pass it through a caller job with environment: set."
+            exit 1
+          fi
+          if [ -z "$SERVICE_NAME" ]; then
+            echo "::error::SERVICE_NAME is empty. Set the SERVICE_NAME variable on the GitHub environment (prod/dev) and pass it through a caller job with environment: set."
+            exit 1
+          fi
           if [ "$REQUIRE_POSTGRES" = "true" ] && { [ -z "$PG_USER" ] || [ -z "$PG_PASS" ]; }; then
             echo "::error::Set PG_USER and PG_PASS secrets for this environment."
             exit 1
@@ -275,22 +283,55 @@ jobs:
               sudo journalctl -u "$SERVICE_NAME" -n 40 --no-pager
               exit 1
             fi
+            echo "[Deploy] Waiting for local health check on port $PORT..."
+            HEALTH_OK=no
+            for i in $(seq 1 24); do
+              if curl -sf "http://127.0.0.1:${PORT}/health" > /dev/null; then
+                echo "[Deploy] Local health check passed (+$(( (i - 1) * 5 ))s)."
+                HEALTH_OK=yes
+                break
+              fi
+              sleep 5
+            done
+            if [ "$HEALTH_OK" != "yes" ]; then
+              echo "::error::Local health check failed after 115s on http://127.0.0.1:${PORT}/health"
+              sudo journalctl -u "$SERVICE_NAME" -n 40 --no-pager
+              exit 1
+            fi
+            echo "[Deploy] Waiting for local homepage check on port $PORT..."
+            HOME_OK=no
+            for i in $(seq 1 12); do
+              HTTP=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/" || echo "000")
+              if [ "$HTTP" = "200" ]; then
+                echo "[Deploy] Local homepage check passed (+$(( (i - 1) * 5 ))s)."
+                HOME_OK=yes
+                break
+              fi
+              sleep 5
+            done
+            if [ "$HOME_OK" != "yes" ]; then
+              echo "::error::Local homepage check failed after 55s (expected HTTP 200 from http://127.0.0.1:${PORT}/)."
+              sudo journalctl -u "$SERVICE_NAME" -n 40 --no-pager
+              exit 1
+            fi
 
       - name: Verify public site health
         run: |
           HEALTH_URL="https://${FULL_HOSTNAME}/health"
-          echo "Polling $HEALTH_URL every 5s for up to 30s..."
+          HOME_URL="https://${FULL_HOSTNAME}/"
+          echo "Polling $HEALTH_URL and $HOME_URL every 5s for up to 30s..."
           START=$(date +%s)
           while true; do
             ELAPSED=$(( $(date +%s) - START ))
-            HTTP=$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_URL" || echo "000")
-            echo "Health check (+${ELAPSED}s) -> HTTP $HTTP"
-            if [ "$HTTP" = "200" ]; then
-              echo "Health check passed."
+            HEALTH_HTTP=$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_URL" || echo "000")
+            HOME_HTTP=$(curl -s -o /dev/null -w '%{http_code}' "$HOME_URL" || echo "000")
+            echo "Health (+${ELAPSED}s) -> HTTP $HEALTH_HTTP; Home (+${ELAPSED}s) -> HTTP $HOME_HTTP"
+            if [ "$HEALTH_HTTP" = "200" ] && [ "$HOME_HTTP" = "200" ]; then
+              echo "Health and homepage checks passed."
               exit 0
             fi
             if [ "$ELAPSED" -ge 30 ]; then
-              echo "::error::Health check failed after 30s (expected HTTP 200 from $HEALTH_URL)."
+              echo "::error::Public checks failed after 30s (expected HTTP 200 from $HEALTH_URL and $HOME_URL)."
               exit 1
             fi
             sleep 5
