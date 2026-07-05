@@ -23,6 +23,10 @@ install_aws_cli() {
     x86_64|amd64)  AWS_ARCH=x86_64 ;;
     *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
   esac
+  if ! command -v unzip >/dev/null 2>&1; then
+    apt-get update
+    apt-get install -y unzip
+  fi
   TMP=$(mktemp -d)
   curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${AWS_ARCH}.zip" -o "$TMP/awscliv2.zip"
   unzip -q "$TMP/awscliv2.zip" -d "$TMP"
