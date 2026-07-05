@@ -175,11 +175,11 @@ jobs:
           echo "dll_version=$DLL_VERSION" >> $GITHUB_OUTPUT
 
       - name: Install SonarScanner
-        if: env.SONAR_TOKEN != ''
+        if: env.SONAR_TOKEN != '' && (github.event_name != 'push' || github.ref_name != inputs.development_branch)
         run: dotnet tool install --global dotnet-sonarscanner
 
       - name: SonarCloud begin
-        if: env.SONAR_TOKEN != ''
+        if: env.SONAR_TOKEN != '' && (github.event_name != 'push' || github.ref_name != inputs.development_branch)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_EVENT_NAME: ${{ github.event_name }}
@@ -253,7 +253,7 @@ jobs:
             --results-directory "$GITHUB_WORKSPACE/coverage"
 
       - name: SonarCloud end
-        if: env.SONAR_TOKEN != ''
+        if: env.SONAR_TOKEN != '' && (github.event_name != 'push' || github.ref_name != inputs.development_branch)
         run: dotnet sonarscanner end /d:sonar.token=$SONAR_TOKEN
 
       - name: Upload coverage results
@@ -346,11 +346,11 @@ jobs:
           echo "dll_version=$DLL_VERSION" >> $GITHUB_OUTPUT
 
       - name: Install SonarScanner
-        if: env.SONAR_TOKEN != ''
+        if: env.SONAR_TOKEN != '' && (github.event_name != 'push' || github.ref_name != inputs.development_branch)
         run: dotnet tool install --global dotnet-sonarscanner
 
       - name: SonarCloud begin
-        if: env.SONAR_TOKEN != ''
+        if: env.SONAR_TOKEN != '' && (github.event_name != 'push' || github.ref_name != inputs.development_branch)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_EVENT_NAME: ${{ github.event_name }}
@@ -424,7 +424,7 @@ jobs:
             --results-directory "$GITHUB_WORKSPACE/coverage"
 
       - name: SonarCloud end
-        if: env.SONAR_TOKEN != ''
+        if: env.SONAR_TOKEN != '' && (github.event_name != 'push' || github.ref_name != inputs.development_branch)
         run: dotnet sonarscanner end /d:sonar.token=$SONAR_TOKEN
 
       - name: Upload coverage results
