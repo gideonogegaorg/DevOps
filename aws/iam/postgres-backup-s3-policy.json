@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PostgresBackupWrite",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::gideonogega-postgres-backups/ec2-ubuntu/*"
+    },
+    {
+      "Sid": "PostgresBackupList",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::gideonogega-postgres-backups",
+      "Condition": {
+        "StringLike": { "s3:prefix": ["ec2-ubuntu/*"] }
+      }
+    }
+  ]
+}

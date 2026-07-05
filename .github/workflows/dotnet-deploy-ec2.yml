@@ -1,0 +1,274 @@
+name: dotnet-deploy-ec2
+
+on:
+  workflow_call:
+    inputs:
+      csproj_publish:
+        required: true
+        type: string
+      app_name:
+        required: true
+        type: string
+      photos_app_name:
+        required: false
+        type: string
+        default: ""
+      dotnet_version:
+        required: false
+        type: string
+        default: "10.0.x"
+      generate_appsettings_script:
+        required: false
+        type: string
+        default: "scripts/generate-appsettings.sh"
+      generate_robots_script:
+        required: false
+        type: string
+        default: "scripts/generate-robots.sh"
+      configure_service_script:
+        required: false
+        type: string
+        default: "scripts/configure-service.sh"
+      install_runtime_script:
+        required: false
+        type: string
+        default: "scripts/install-aspnetcore-runtime.sh"
+      assembly_version:
+        required: true
+        type: string
+      dll_version:
+        required: true
+        type: string
+      setup_changed:
+        required: false
+        type: string
+        default: "false"
+      deploy_path:
+        required: true
+        type: string
+      full_hostname:
+        required: true
+        type: string
+      port:
+        required: true
+        type: string
+      service_name:
+        required: true
+        type: string
+      cert_domain:
+        required: true
+        type: string
+      is_production:
+        required: false
+        type: string
+        default: "false"
+      photos_environment:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      DEPLOY_DOMAIN:
+        required: false
+      PG_USER:
+        required: true
+      PG_PASS:
+        required: true
+      GH_USER:
+        required: true
+      GH_CLASSIC_PAT:
+        required: true
+      REMOTE_HOST:
+        required: true
+      SSH_PRIVATE_KEY:
+        required: true
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      SEC_GROUP_ID:
+        required: true
+      GOOGLE_CLIENT_ID:
+        required: false
+      GOOGLE_CLIENT_SECRET:
+        required: false
+      OPENTELEMETRY_ENABLED:
+        required: false
+      OPENTELEMETRY_OTLPEXPORTENDPOINT:
+        required: false
+      OPENTELEMETRY_LOGGINGENDPOINT:
+        required: false
+      OPENTELEMETRY_HEADERS:
+        required: false
+      OPENTELEMETRY_METRICSENDPOINT:
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    env:
+      DEPLOY_PATH: ${{ inputs.deploy_path }}
+      FULL_HOSTNAME: ${{ inputs.full_hostname }}
+      BRANCH: ${{ github.ref_name }}
+      ASSEMBLY_VERSION: ${{ inputs.assembly_version }}
+      DLL_VERSION: ${{ inputs.dll_version }}
+      SETUP_CHANGED: ${{ inputs.setup_changed }}
+      PORT: ${{ inputs.port }}
+      SERVICE_NAME: ${{ inputs.service_name }}
+      CERT_DOMAIN: ${{ inputs.cert_domain }}
+      POSTGRES_CONNECTION_STRING: "Host=localhost;Port=5432;Database=${{ inputs.service_name }};Username=${{ secrets.PG_USER }};Password=${{ secrets.PG_PASS }}"
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      OPENTELEMETRY_ENABLED: ${{ secrets.OPENTELEMETRY_ENABLED }}
+      OPENTELEMETRY_OTLPEXPORTENDPOINT: ${{ secrets.OPENTELEMETRY_OTLPEXPORTENDPOINT }}
+      OPENTELEMETRY_LOGGINGENDPOINT: ${{ secrets.OPENTELEMETRY_LOGGINGENDPOINT }}
+      OPENTELEMETRY_HEADERS: ${{ secrets.OPENTELEMETRY_HEADERS }}
+      OPENTELEMETRY_METRICSENDPOINT: ${{ secrets.OPENTELEMETRY_METRICSENDPOINT }}
+      GITHUB_USERNAME: ${{ secrets.GH_USER }}
+      GITHUB_PAT: ${{ secrets.GH_CLASSIC_PAT }}
+      IS_PRODUCTION: ${{ inputs.is_production }}
+      PG_USER: ${{ secrets.PG_USER }}
+      PG_PASS: ${{ secrets.PG_PASS }}
+      SEC_GROUP_ID: ${{ secrets.SEC_GROUP_ID }}
+      PHOTOS_APP_NAME: ${{ inputs.photos_app_name != '' && inputs.photos_app_name || inputs.app_name }}
+      PHOTOS_ENVIRONMENT: ${{ inputs.photos_environment }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: ${{ inputs.dotnet_version }}
+
+      - name: Validate deploy config
+        run: |
+          if [ -z "$DEPLOY_PATH" ]; then
+            echo "::error::DEPLOY_PATH is empty."
+            exit 1
+          fi
+          if [[ "$DEPLOY_PATH" != /var/www/* ]]; then
+            echo "::error::DEPLOY_PATH is invalid."
+            exit 1
+          fi
+          if [ -z "$PG_USER" ] || [ -z "$PG_PASS" ]; then
+            echo "::error::Set PG_USER and PG_PASS secrets for this environment."
+            exit 1
+          fi
+
+      - name: Generate appsettings.json for deploy
+        env:
+          SERILOG_LOG_PATH: ${{ env.DEPLOY_PATH }}/logs
+          UPLOADS_PATH: ${{ env.DEPLOY_PATH }}/uploads
+          PHOTOS_PROVIDER: S3
+          S3_PHOTOS_BUCKET: ${{ vars.S3_PHOTOS_BUCKET }}
+          PHOTOS_APP_NAME: ${{ env.PHOTOS_APP_NAME }}
+          PHOTOS_ENVIRONMENT: ${{ env.PHOTOS_ENVIRONMENT }}
+          PHOTOS_LOCAL_BASE_PATH: uploads/photos
+          TELEMETRY_ENVIRONMENT_NAME: ${{ github.ref_name }}
+          IS_PRODUCTION: ${{ env.IS_PRODUCTION }}
+        run: bash "${{ inputs.generate_appsettings_script }}"
+
+      - name: Generate robots.txt
+        if: inputs.generate_robots_script != ''
+        run: bash "${{ inputs.generate_robots_script }}"
+
+      - name: Publish
+        run: |
+          dotnet publish "${{ inputs.csproj_publish }}" -c Release -o ./site \
+            -p:Version=${{ env.ASSEMBLY_VERSION }} \
+            -p:AssemblyVersion=${{ env.ASSEMBLY_VERSION }} \
+            -p:FileVersion=${{ env.ASSEMBLY_VERSION }} \
+            -p:InformationalVersion=${{ env.DLL_VERSION }}
+
+      - name: Get GitHub Runner IP
+        id: ip
+        run: echo "ipv4=$(curl -s https://api.ipify.org)" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Authorize Runner IP in Security Group
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id "$SEC_GROUP_ID" \
+            --protocol tcp --port 22 --cidr ${{ steps.ip.outputs.ipv4 }}/32
+
+      - name: Copy site output to EC2
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "site/*,${{ inputs.configure_service_script }},${{ inputs.install_runtime_script }}"
+          target: "/tmp/${{ inputs.app_name }}-deploy-${{ github.run_id }}"
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            DEPLOY_PATH='${{ env.DEPLOY_PATH }}'
+            SETUP_CHANGED='${{ env.SETUP_CHANGED }}'
+            FULL_HOSTNAME='${{ env.FULL_HOSTNAME }}'
+            PORT='${{ env.PORT }}'
+            SERVICE_NAME='${{ env.SERVICE_NAME }}'
+            CERT_DOMAIN='${{ env.CERT_DOMAIN }}'
+            IS_PRODUCTION='${{ env.IS_PRODUCTION }}'
+            STAGING="/tmp/${{ inputs.app_name }}-deploy-${{ github.run_id }}"
+            CONFIG_SCRIPT="${{ inputs.configure_service_script }}"
+            RUNTIME_SCRIPT="${{ inputs.install_runtime_script }}"
+            trap 'rm -rf "$STAGING"' EXIT
+            echo "[Deploy] Ensuring ASP.NET Core Runtime 10..."
+            sudo bash "$STAGING/$RUNTIME_SCRIPT"
+            echo "[Deploy] Ensuring directory..."
+            sudo mkdir -p "$DEPLOY_PATH/site" "$DEPLOY_PATH/logs" "$DEPLOY_PATH/uploads"
+            sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
+            if [ "$SETUP_CHANGED" = "true" ] || [ ! -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+              echo "[Deploy] Running configure-service.sh..."
+              sudo bash "$STAGING/$CONFIG_SCRIPT" "$FULL_HOSTNAME" "$PORT" "$SERVICE_NAME" "$CERT_DOMAIN" "$IS_PRODUCTION"
+            fi
+            echo "[Deploy] Copying site output..."
+            cp -r "$STAGING/site/"* "$DEPLOY_PATH/site/"
+            sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
+            echo "[Deploy] Restarting service..."
+            sudo systemctl restart "$SERVICE_NAME"
+            if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+              echo "::error::Service $SERVICE_NAME failed to start after deploy."
+              sudo journalctl -u "$SERVICE_NAME" -n 40 --no-pager
+              exit 1
+            fi
+
+      - name: Verify public site health
+        run: |
+          HEALTH_URL="https://${FULL_HOSTNAME}/health"
+          echo "Polling $HEALTH_URL every 5s for up to 30s..."
+          START=$(date +%s)
+          while true; do
+            ELAPSED=$(( $(date +%s) - START ))
+            HTTP=$(curl -s -o /dev/null -w '%{http_code}' "$HEALTH_URL" || echo "000")
+            echo "Health check (+${ELAPSED}s) -> HTTP $HTTP"
+            if [ "$HTTP" = "200" ]; then
+              echo "Health check passed."
+              exit 0
+            fi
+            if [ "$ELAPSED" -ge 30 ]; then
+              echo "::error::Health check failed after 30s (expected HTTP 200 from $HEALTH_URL)."
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Revoke Runner IP (Cleanup)
+        if: always()
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "$SEC_GROUP_ID" \
+            --protocol tcp --port 22 --cidr ${{ steps.ip.outputs.ipv4 }}/32

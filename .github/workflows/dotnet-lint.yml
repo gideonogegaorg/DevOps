@@ -1,0 +1,58 @@
+name: dotnet-lint
+
+on:
+  workflow_call:
+    inputs:
+      solution_file:
+        required: true
+        type: string
+      dotnet_version:
+        required: false
+        type: string
+        default: "10.0.x"
+      generate_appsettings_script:
+        required: false
+        type: string
+        default: ""
+      verify_appsettings_not_tracked:
+        required: false
+        type: string
+        default: "true"
+    secrets:
+      GH_USER:
+        required: true
+      GH_CLASSIC_PAT:
+        required: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_USERNAME: ${{ secrets.GH_USER }}
+      GITHUB_PAT: ${{ secrets.GH_CLASSIC_PAT }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: ${{ inputs.dotnet_version }}
+      - name: Generate appsettings.json
+        if: inputs.generate_appsettings_script != ''
+        run: bash "${{ inputs.generate_appsettings_script }}"
+      - name: Verify appsettings.json is not tracked
+        if: inputs.verify_appsettings_not_tracked == 'true'
+        run: |
+          tracked=$(git ls-files '**/appsettings.json' '**/appsettings.*.json' 2>/dev/null | grep -v '\.template$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::Do not commit appsettings.json or appsettings.*.json (use appsettings.json.template only):"
+            echo "$tracked"
+            exit 1
+          fi
+      - name: Configure NuGet auth for GMO feed
+        run: dotnet nuget update source GMO --username "$GITHUB_USERNAME" --password "$GITHUB_PAT" --store-password-in-clear-text
+      - name: Restore
+        run: dotnet restore "${{ inputs.solution_file }}" --verbosity normal
+      - name: Audit NuGet packages for vulnerabilities
+        run: dotnet list "${{ inputs.solution_file }}" package --vulnerable --include-transitive
+      - name: Verify format
+        run: dotnet format "${{ inputs.solution_file }}" --verbosity diagnostic --verify-no-changes --no-restore

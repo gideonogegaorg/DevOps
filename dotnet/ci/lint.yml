@@ -1,0 +1,15 @@
+# dotnet lint + audit template (reference)
+# Implemented in .github/workflows/dotnet-lint.yml
+#
+# Steps: checkout, setup dotnet, optional appsettings gen, nuget auth,
+#        restore, vulnerable package audit, dotnet format verify
+
+inputs:
+  solution_file:
+    required: true
+  dotnet_version:
+    default: "10.0.x"
+  generate_appsettings_script:
+    default: ""
+  verify_appsettings_not_tracked:
+    default: "true"

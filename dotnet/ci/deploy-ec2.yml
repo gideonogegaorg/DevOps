@@ -1,0 +1,26 @@
+# dotnet deploy to EC2 template (reference)
+# Implemented in .github/workflows/dotnet-deploy-ec2.yml
+
+inputs:
+  csproj_publish:
+    required: true
+  app_name:
+    required: true
+  photos_app_name:
+    default: ""
+  generate_appsettings_script:
+    default: "scripts/generate-appsettings.sh"
+  generate_robots_script:
+    default: "scripts/generate-robots.sh"
+  configure_service_script:
+    default: "scripts/configure-service.sh"
+  install_runtime_script:
+    default: "scripts/install-aspnetcore-runtime.sh"
+  setup_paths_filter:
+    default: "scripts/configure-service.sh"
+  assembly_version:
+    required: true
+  dll_version:
+    required: true
+  setup_changed:
+    default: "false"

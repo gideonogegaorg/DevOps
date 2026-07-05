@@ -1,0 +1,5 @@
+# SonarQube scan template for .NET projects (GitLab port)
+# Callable implementation: .github/workflows/dotnet-sonarqube-scan.yml
+#
+# Required secrets: SONAR_TOKEN, GH_USER, GH_CLASSIC_PAT
+# Optional inputs documented in dotnet/ci/README.md

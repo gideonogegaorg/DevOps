@@ -1,0 +1,19 @@
+name: dotnet-tag
+
+on:
+  workflow_call:
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Create and push tag
+        run: |
+          TAG_NAME="${{ github.ref_name }}-$(date +%Y)-$(date +%m)-${{ github.run_id }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
