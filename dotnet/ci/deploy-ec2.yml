@@ -23,4 +23,4 @@ inputs:
   dll_version:
     required: true
   setup_changed:
-    default: "false"
+    default: "no"

@@ -40,6 +40,10 @@ uses: gideonogegaorg/DevOps/.github/workflows/dotnet-lint.yml@main
 
 See `dotnet/ci/` for template source; `.github/workflows/dotnet-*.yml` are GitHub-required entrypoints.
 
+**Postgres credentials:** set `PG_USER` and `PG_PASS` once at the **organization** level. App repos should use `secrets: inherit` on deploy jobs and must not duplicate these on repo or environment secrets.
+
+**Deploy flags:** map paths-filter `setup_changed` to `yes`/`no` before passing to `dotnet-deploy-ec2` (GitHub masks the literal `true` in SSH scripts).
+
 ## Adding a new tech stack
 
 1. Create `{stack}/ci/` and `{stack}/ec2/` as needed

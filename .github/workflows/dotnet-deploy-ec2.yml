@@ -42,7 +42,8 @@ on:
       setup_changed:
         required: false
         type: string
-        default: "false"
+        default: "no"
+        description: "Pass yes/no (not true/false) to avoid GitHub Actions masking in SSH scripts."
       deploy_path:
         required: true
         type: string
@@ -61,7 +62,8 @@ on:
       is_production:
         required: false
         type: string
-        default: "false"
+        default: "development"
+        description: "Legacy bool (true/false) or production/development for configure-service.sh."
       photos_environment:
         required: false
         type: string
@@ -69,7 +71,8 @@ on:
       require_postgres:
         required: false
         type: string
-        default: "true"
+        default: "yes"
+        description: "Pass yes/no (not true/false) for PG secret validation."
       deploy_env_lines:
         required: false
         type: string
@@ -124,7 +127,7 @@ jobs:
       BRANCH: ${{ github.ref_name }}
       ASSEMBLY_VERSION: ${{ inputs.assembly_version }}
       DLL_VERSION: ${{ inputs.dll_version }}
-      SETUP_CHANGED: ${{ inputs.setup_changed }}
+      SETUP_CHANGED: ${{ (inputs.setup_changed == 'true' || inputs.setup_changed == 'yes') && 'yes' || 'no' }}
       PORT: ${{ inputs.port }}
       SERVICE_NAME: ${{ inputs.service_name }}
       CERT_DOMAIN: ${{ inputs.cert_domain }}
@@ -139,6 +142,8 @@ jobs:
       GITHUB_USERNAME: ${{ secrets.GH_USER }}
       GITHUB_PAT: ${{ secrets.GH_CLASSIC_PAT }}
       IS_PRODUCTION: ${{ inputs.is_production }}
+      PRODUCTION_MODE: ${{ (inputs.is_production == 'true' || inputs.is_production == 'production') && 'production' || 'development' }}
+      REQUIRE_POSTGRES: ${{ (inputs.require_postgres == 'true' || inputs.require_postgres == 'yes') && 'yes' || 'no' }}
       PG_USER: ${{ secrets.PG_USER }}
       PG_PASS: ${{ secrets.PG_PASS }}
       SEC_GROUP_ID: ${{ secrets.SEC_GROUP_ID }}
@@ -153,8 +158,6 @@ jobs:
           dotnet-version: ${{ inputs.dotnet_version }}
 
       - name: Validate deploy config
-        env:
-          REQUIRE_POSTGRES: ${{ inputs.require_postgres }}
         run: |
           if [ -z "$DEPLOY_PATH" ]; then
             echo "::error::DEPLOY_PATH is empty."
@@ -172,8 +175,8 @@ jobs:
             echo "::error::SERVICE_NAME is empty. Set the SERVICE_NAME variable on the GitHub environment (prod/dev) and pass it through a caller job with environment: set."
             exit 1
           fi
-          if [ "$REQUIRE_POSTGRES" = "true" ] && { [ -z "$PG_USER" ] || [ -z "$PG_PASS" ]; }; then
-            echo "::error::Set PG_USER and PG_PASS secrets for this environment."
+          if [ "$REQUIRE_POSTGRES" = "yes" ] && { [ -z "$PG_USER" ] || [ -z "$PG_PASS" ]; }; then
+            echo "::error::Set PG_USER and PG_PASS organization secrets (gideonogegaorg → Settings → Secrets → Actions). Do not duplicate on repo or environment."
             exit 1
           fi
 
@@ -244,7 +247,7 @@ jobs:
             PORT='${{ env.PORT }}'
             SERVICE_NAME='${{ env.SERVICE_NAME }}'
             CERT_DOMAIN='${{ env.CERT_DOMAIN }}'
-            IS_PRODUCTION='${{ env.IS_PRODUCTION }}'
+            PRODUCTION_MODE='${{ env.PRODUCTION_MODE }}'
             DEPLOY_ENV_LINES='${{ inputs.deploy_env_lines }}'
             EXTRA_DEPLOY_DIRS='${{ inputs.extra_deploy_dirs }}'
             STAGING="/tmp/${{ inputs.app_name }}-deploy-${{ github.run_id }}"
@@ -265,9 +268,26 @@ jobs:
               done
             fi
             sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
-            if [ "$SETUP_CHANGED" = "true" ] || [ ! -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+            SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+            NEEDS_SETUP=no
+            if [ "$SETUP_CHANGED" != "no" ] || [ ! -f "$SERVICE_FILE" ]; then
+              NEEDS_SETUP=yes
+            else
+              DEPLOYED_DLL=""
+              shopt -s nullglob
+              for dll in "$STAGING/site/"*.Web.dll; do
+                DEPLOYED_DLL="$(basename "$dll")"
+                break
+              done
+              shopt -u nullglob
+              if [ -n "$DEPLOYED_DLL" ] && ! grep -qF "$DEPLOYED_DLL" "$SERVICE_FILE"; then
+                echo "[Deploy] Systemd unit does not reference $DEPLOYED_DLL; re-running configure-service.sh..."
+                NEEDS_SETUP=yes
+              fi
+            fi
+            if [ "$NEEDS_SETUP" = "yes" ]; then
               echo "[Deploy] Running configure-service.sh..."
-              sudo bash "$STAGING/$CONFIG_SCRIPT" "$FULL_HOSTNAME" "$PORT" "$SERVICE_NAME" "$CERT_DOMAIN" "$IS_PRODUCTION"
+              sudo bash "$STAGING/$CONFIG_SCRIPT" "$FULL_HOSTNAME" "$PORT" "$SERVICE_NAME" "$CERT_DOMAIN" "$PRODUCTION_MODE"
             fi
             if [ -n "$DEPLOY_ENV_LINES" ]; then
               printf '%s\n' "$DEPLOY_ENV_LINES" > "$DEPLOY_PATH/.env"
@@ -280,7 +300,7 @@ jobs:
             sudo systemctl restart "$SERVICE_NAME"
             if ! systemctl is-active --quiet "$SERVICE_NAME"; then
               echo "::error::Service $SERVICE_NAME failed to start after deploy."
-              sudo journalctl -u "$SERVICE_NAME" -n 40 --no-pager
+              sudo journalctl -u "$SERVICE_NAME" -n 80 --no-pager
               exit 1
             fi
             echo "[Deploy] Waiting for local health check on port $PORT..."
@@ -295,7 +315,7 @@ jobs:
             done
             if [ "$HEALTH_OK" != "yes" ]; then
               echo "::error::Local health check failed after 115s on http://127.0.0.1:${PORT}/health"
-              sudo journalctl -u "$SERVICE_NAME" -n 40 --no-pager
+              sudo journalctl -u "$SERVICE_NAME" -n 80 --no-pager
               exit 1
             fi
             echo "[Deploy] Waiting for local homepage check on port $PORT..."
@@ -311,7 +331,7 @@ jobs:
             done
             if [ "$HOME_OK" != "yes" ]; then
               echo "::error::Local homepage check failed after 55s (expected HTTP 200 from http://127.0.0.1:${PORT}/)."
-              sudo journalctl -u "$SERVICE_NAME" -n 40 --no-pager
+              sudo journalctl -u "$SERVICE_NAME" -n 80 --no-pager
               exit 1
             fi
 

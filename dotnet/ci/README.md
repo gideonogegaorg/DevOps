@@ -26,9 +26,11 @@ Secrets `GH_USER` / `GH_CLASSIC_PAT` are optional when `use_gmo_feed` is `false`
 
 | Input | Default | Purpose |
 |-------|---------|---------|
-| `require_postgres` | `true` | When `false`, skip PG secret validation |
+| `require_postgres` | `yes` | When `no`, skip PG secret validation |
+| `setup_changed` | `no` | Pass `yes`/`no` from caller (map paths-filter `true` → `yes`) |
+| `is_production` | `development` | `true`/`production` or `false`/`development` for configure-service.sh |
 | `generate_appsettings_script` | `scripts/generate-appsettings.sh` | Skip when empty |
 | `deploy_env_lines` | `""` | Lines written to `$DEPLOY_PATH/.env` |
 | `extra_deploy_dirs` | `uploads` | Comma-separated dirs under deploy path |
 
-Secrets: `REMOTE_HOST`, `SSH_PRIVATE_KEY`, `AWS_*`, `SEC_GROUP_ID`; `PG_USER`/`PG_PASS` when `require_postgres` is `true`.
+Secrets: `REMOTE_HOST`, `SSH_PRIVATE_KEY`, `AWS_*`, `SEC_GROUP_ID` (repo or org). **`PG_USER` / `PG_PASS`**: organization secrets only (`gideonogegaorg`); callers use `secrets: inherit`.
