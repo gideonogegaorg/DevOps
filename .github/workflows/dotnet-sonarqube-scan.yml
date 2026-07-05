@@ -217,17 +217,26 @@ jobs:
               echo "::error::Could not determine SonarCloud main branch for ${SONAR_PROJECT_KEY}."
               exit 1
             fi
-            if [ "$MAIN_NAME" != "$PRODUCTION_BRANCH" ]; then
-              if ! curl -sf -X POST -u "${SONAR_TOKEN}:" \
+            if [ "$MAIN_NAME" = "$PRODUCTION_BRANCH" ]; then
+              echo "SonarCloud main branch already ${PRODUCTION_BRANCH}"
+            else
+              if echo "$BRANCHES_JSON" | jq -e --arg branch "$PRODUCTION_BRANCH" '.branches[] | select(.name == $branch and (.isMain | not))' >/dev/null; then
+                echo "Deleting existing non-main branch ${PRODUCTION_BRANCH} before rename..."
+                curl -sf -X POST -u "${SONAR_TOKEN}:" \
+                  "https://sonarcloud.io/api/project_branches/delete" \
+                  -d "project=${SONAR_PROJECT_KEY}" \
+                  -d "branch=${PRODUCTION_BRANCH}"
+              fi
+              RENAME_HTTP="$(curl -s -o /tmp/sonar-rename.json -w '%{http_code}' -X POST -u "${SONAR_TOKEN}:" \
                 "https://sonarcloud.io/api/project_branches/rename" \
                 -d "project=${SONAR_PROJECT_KEY}" \
-                -d "name=${PRODUCTION_BRANCH}"; then
+                -d "name=${PRODUCTION_BRANCH}")"
+              if [ "$RENAME_HTTP" != "200" ] && [ "$RENAME_HTTP" != "204" ]; then
+                cat /tmp/sonar-rename.json || true
                 echo "::error::Could not rename SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}. Ensure SONAR_TOKEN has Administer Project on ${SONAR_PROJECT_KEY}."
                 exit 1
               fi
               echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}"
-            else
-              echo "SonarCloud main branch already ${PRODUCTION_BRANCH}"
             fi
           fi
           begin_args=(
@@ -414,17 +423,26 @@ jobs:
               echo "::error::Could not determine SonarCloud main branch for ${SONAR_PROJECT_KEY}."
               exit 1
             fi
-            if [ "$MAIN_NAME" != "$PRODUCTION_BRANCH" ]; then
-              if ! curl -sf -X POST -u "${SONAR_TOKEN}:" \
+            if [ "$MAIN_NAME" = "$PRODUCTION_BRANCH" ]; then
+              echo "SonarCloud main branch already ${PRODUCTION_BRANCH}"
+            else
+              if echo "$BRANCHES_JSON" | jq -e --arg branch "$PRODUCTION_BRANCH" '.branches[] | select(.name == $branch and (.isMain | not))' >/dev/null; then
+                echo "Deleting existing non-main branch ${PRODUCTION_BRANCH} before rename..."
+                curl -sf -X POST -u "${SONAR_TOKEN}:" \
+                  "https://sonarcloud.io/api/project_branches/delete" \
+                  -d "project=${SONAR_PROJECT_KEY}" \
+                  -d "branch=${PRODUCTION_BRANCH}"
+              fi
+              RENAME_HTTP="$(curl -s -o /tmp/sonar-rename.json -w '%{http_code}' -X POST -u "${SONAR_TOKEN}:" \
                 "https://sonarcloud.io/api/project_branches/rename" \
                 -d "project=${SONAR_PROJECT_KEY}" \
-                -d "name=${PRODUCTION_BRANCH}"; then
+                -d "name=${PRODUCTION_BRANCH}")"
+              if [ "$RENAME_HTTP" != "200" ] && [ "$RENAME_HTTP" != "204" ]; then
+                cat /tmp/sonar-rename.json || true
                 echo "::error::Could not rename SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}. Ensure SONAR_TOKEN has Administer Project on ${SONAR_PROJECT_KEY}."
                 exit 1
               fi
               echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}"
-            else
-              echo "SonarCloud main branch already ${PRODUCTION_BRANCH}"
             fi
           fi
           begin_args=(
