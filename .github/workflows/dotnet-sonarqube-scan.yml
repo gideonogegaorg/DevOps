@@ -204,8 +204,8 @@ jobs:
             exit 1
           fi
           PROJECT_JSON="$(curl -sf -u "${SONAR_TOKEN}:" \
-            "https://sonarcloud.io/api/projects/search?projects=${SONAR_PROJECT_KEY}" || true)"
-          if ! echo "$PROJECT_JSON" | grep -q "\"key\":\"${SONAR_PROJECT_KEY}\""; then
+            "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}" || true)"
+          if ! echo "$PROJECT_JSON" | grep -q "\"name\""; then
             echo "::error::SonarCloud project '${SONAR_PROJECT_KEY}' was not found. Import the repository at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/projects or run the sonarcloud-setup workflow."
             exit 1
           fi
@@ -389,8 +389,8 @@ jobs:
             exit 1
           fi
           PROJECT_JSON="$(curl -sf -u "${SONAR_TOKEN}:" \
-            "https://sonarcloud.io/api/projects/search?projects=${SONAR_PROJECT_KEY}" || true)"
-          if ! echo "$PROJECT_JSON" | grep -q "\"key\":\"${SONAR_PROJECT_KEY}\""; then
+            "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}" || true)"
+          if ! echo "$PROJECT_JSON" | grep -q "\"name\""; then
             echo "::error::SonarCloud project '${SONAR_PROJECT_KEY}' was not found. Import the repository at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/projects or run the sonarcloud-setup workflow."
             exit 1
           fi
