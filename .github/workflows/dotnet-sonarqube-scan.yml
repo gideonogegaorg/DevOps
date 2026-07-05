@@ -239,6 +239,21 @@ jobs:
               echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}"
             fi
           fi
+          if [ "$QG_WAIT" = "true" ] && [ "$SONAR_EVENT_NAME" = "push" ]; then
+            qg_http="$(curl -s -o /tmp/sonar-qg-preflight.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
+              "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=${SONAR_BRANCH}")"
+            if [ "$qg_http" != "200" ]; then
+              qg_body="$(cat /tmp/sonar-qg-preflight.json || true)"
+              if echo "$qg_body" | grep -q "non main branches"; then
+                echo "::error::SonarCloud Free plan cannot enforce quality gates on branch '${SONAR_BRANCH}'. Upgrade ${SONAR_ORGANIZATION} to the Team plan at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/billing — branch analysis on prod and dev requires Team or Enterprise. Do not disable the quality gate."
+              else
+                cat /tmp/sonar-qg-preflight.json || true
+                echo "::error::Cannot read SonarCloud quality gate for branch '${SONAR_BRANCH}' (HTTP ${qg_http}). Verify SONAR_TOKEN permissions and run the sonarcloud-setup workflow."
+              fi
+              exit 1
+            fi
+            echo "SonarCloud quality gate API reachable for branch '${SONAR_BRANCH}'."
+          fi
           begin_args=(
             "/k:${SONAR_PROJECT_KEY}"
             "/o:${SONAR_ORGANIZATION}"
@@ -444,6 +459,21 @@ jobs:
               fi
               echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}"
             fi
+          fi
+          if [ "$QG_WAIT" = "true" ] && [ "$SONAR_EVENT_NAME" = "push" ]; then
+            qg_http="$(curl -s -o /tmp/sonar-qg-preflight.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
+              "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=${SONAR_BRANCH}")"
+            if [ "$qg_http" != "200" ]; then
+              qg_body="$(cat /tmp/sonar-qg-preflight.json || true)"
+              if echo "$qg_body" | grep -q "non main branches"; then
+                echo "::error::SonarCloud Free plan cannot enforce quality gates on branch '${SONAR_BRANCH}'. Upgrade ${SONAR_ORGANIZATION} to the Team plan at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/billing — branch analysis on prod and dev requires Team or Enterprise. Do not disable the quality gate."
+              else
+                cat /tmp/sonar-qg-preflight.json || true
+                echo "::error::Cannot read SonarCloud quality gate for branch '${SONAR_BRANCH}' (HTTP ${qg_http}). Verify SONAR_TOKEN permissions and run the sonarcloud-setup workflow."
+              fi
+              exit 1
+            fi
+            echo "SonarCloud quality gate API reachable for branch '${SONAR_BRANCH}'."
           fi
           begin_args=(
             "/k:${SONAR_PROJECT_KEY}"
