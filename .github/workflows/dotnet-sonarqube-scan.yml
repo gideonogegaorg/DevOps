@@ -210,12 +210,24 @@ jobs:
             exit 1
           fi
           if [ "$SONAR_EVENT_NAME" = "push" ] && [ "$SONAR_BRANCH" = "$PRODUCTION_BRANCH" ]; then
-            if curl -sf -X POST -u "${SONAR_TOKEN}:" \
-              "https://sonarcloud.io/api/project_branches/set_main?project=${SONAR_PROJECT_KEY}&branch=${PRODUCTION_BRANCH}"; then
-              echo "SonarCloud main branch aligned to GitHub ${PRODUCTION_BRANCH}"
-            else
-              echo "::error::Could not set SonarCloud main branch to ${PRODUCTION_BRANCH}. Ensure SONAR_TOKEN has Administer Project on ${SONAR_PROJECT_KEY}."
+            BRANCHES_JSON="$(curl -sf -u "${SONAR_TOKEN}:" \
+              "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}")"
+            MAIN_NAME="$(echo "$BRANCHES_JSON" | jq -r '.branches[] | select(.isMain) | .name' | head -n 1)"
+            if [ -z "$MAIN_NAME" ]; then
+              echo "::error::Could not determine SonarCloud main branch for ${SONAR_PROJECT_KEY}."
               exit 1
+            fi
+            if [ "$MAIN_NAME" != "$PRODUCTION_BRANCH" ]; then
+              if ! curl -sf -X POST -u "${SONAR_TOKEN}:" \
+                "https://sonarcloud.io/api/project_branches/rename" \
+                -d "project=${SONAR_PROJECT_KEY}" \
+                -d "name=${PRODUCTION_BRANCH}"; then
+                echo "::error::Could not rename SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}. Ensure SONAR_TOKEN has Administer Project on ${SONAR_PROJECT_KEY}."
+                exit 1
+              fi
+              echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}"
+            else
+              echo "SonarCloud main branch already ${PRODUCTION_BRANCH}"
             fi
           fi
           begin_args=(
@@ -395,12 +407,24 @@ jobs:
             exit 1
           fi
           if [ "$SONAR_EVENT_NAME" = "push" ] && [ "$SONAR_BRANCH" = "$PRODUCTION_BRANCH" ]; then
-            if curl -sf -X POST -u "${SONAR_TOKEN}:" \
-              "https://sonarcloud.io/api/project_branches/set_main?project=${SONAR_PROJECT_KEY}&branch=${PRODUCTION_BRANCH}"; then
-              echo "SonarCloud main branch aligned to GitHub ${PRODUCTION_BRANCH}"
-            else
-              echo "::error::Could not set SonarCloud main branch to ${PRODUCTION_BRANCH}. Ensure SONAR_TOKEN has Administer Project on ${SONAR_PROJECT_KEY}."
+            BRANCHES_JSON="$(curl -sf -u "${SONAR_TOKEN}:" \
+              "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}")"
+            MAIN_NAME="$(echo "$BRANCHES_JSON" | jq -r '.branches[] | select(.isMain) | .name' | head -n 1)"
+            if [ -z "$MAIN_NAME" ]; then
+              echo "::error::Could not determine SonarCloud main branch for ${SONAR_PROJECT_KEY}."
               exit 1
+            fi
+            if [ "$MAIN_NAME" != "$PRODUCTION_BRANCH" ]; then
+              if ! curl -sf -X POST -u "${SONAR_TOKEN}:" \
+                "https://sonarcloud.io/api/project_branches/rename" \
+                -d "project=${SONAR_PROJECT_KEY}" \
+                -d "name=${PRODUCTION_BRANCH}"; then
+                echo "::error::Could not rename SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}. Ensure SONAR_TOKEN has Administer Project on ${SONAR_PROJECT_KEY}."
+                exit 1
+              fi
+              echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}"
+            else
+              echo "SonarCloud main branch already ${PRODUCTION_BRANCH}"
             fi
           fi
           begin_args=(
