@@ -22,6 +22,14 @@ on:
         required: false
         type: string
         default: dev
+      sonar_main_branch:
+        required: false
+        type: string
+        default: ""
+      sonar_skip_branches:
+        required: false
+        type: string
+        default: ""
       sonar_project_key:
         required: false
         type: string
@@ -102,6 +110,7 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       PRODUCTION_BRANCH: ${{ inputs.production_branch }}
       DEVELOPMENT_BRANCH: ${{ inputs.development_branch }}
+      SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch != '' && inputs.sonar_main_branch || inputs.production_branch }}
     outputs:
       assembly_version: ${{ steps.setversion.outputs.assembly_version }}
       dll_version: ${{ steps.setversion.outputs.dll_version }}
@@ -175,11 +184,19 @@ jobs:
           echo "dll_version=$DLL_VERSION" >> $GITHUB_OUTPUT
 
       - name: Install SonarScanner
-        if: env.SONAR_TOKEN != ''
+        if: >-
+          env.SONAR_TOKEN != '' &&
+          (github.event_name == 'pull_request' ||
+           inputs.sonar_skip_branches == '' ||
+           !contains(format(',{0},', inputs.sonar_skip_branches), format(',{0},', github.ref_name)))
         run: dotnet tool install --global dotnet-sonarscanner
 
       - name: SonarCloud begin
-        if: env.SONAR_TOKEN != ''
+        if: >-
+          env.SONAR_TOKEN != '' &&
+          (github.event_name == 'pull_request' ||
+           inputs.sonar_skip_branches == '' ||
+           !contains(format(',{0},', inputs.sonar_skip_branches), format(',{0},', github.ref_name)))
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_EVENT_NAME: ${{ github.event_name }}
@@ -209,7 +226,7 @@ jobs:
             echo "::error::SonarCloud project '${SONAR_PROJECT_KEY}' was not found. Import the repository at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/projects or run the sonarcloud-setup workflow."
             exit 1
           fi
-          if [ "$SONAR_EVENT_NAME" = "push" ] && [ "$SONAR_BRANCH" = "$PRODUCTION_BRANCH" ]; then
+          if [ "$SONAR_EVENT_NAME" = "push" ] && [ "$SONAR_BRANCH" = "$SONAR_MAIN_BRANCH" ]; then
             BRANCHES_JSON="$(curl -sf -u "${SONAR_TOKEN}:" \
               "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}")"
             MAIN_NAME="$(echo "$BRANCHES_JSON" | jq -r '.branches[] | select(.isMain) | .name' | head -n 1)"
@@ -217,39 +234,34 @@ jobs:
               echo "::error::Could not determine SonarCloud main branch for ${SONAR_PROJECT_KEY}."
               exit 1
             fi
-            if [ "$MAIN_NAME" = "$PRODUCTION_BRANCH" ]; then
-              echo "SonarCloud main branch already ${PRODUCTION_BRANCH}"
+            if [ "$MAIN_NAME" = "$SONAR_MAIN_BRANCH" ]; then
+              echo "SonarCloud main branch already ${SONAR_MAIN_BRANCH}"
             else
-              if echo "$BRANCHES_JSON" | jq -e --arg branch "$PRODUCTION_BRANCH" '.branches[] | select(.name == $branch and (.isMain | not))' >/dev/null; then
-                echo "Deleting existing non-main branch ${PRODUCTION_BRANCH} before rename..."
+              if echo "$BRANCHES_JSON" | jq -e --arg branch "$SONAR_MAIN_BRANCH" '.branches[] | select(.name == $branch and (.isMain | not))' >/dev/null; then
+                echo "Deleting existing non-main branch ${SONAR_MAIN_BRANCH} before rename..."
                 curl -sf -X POST -u "${SONAR_TOKEN}:" \
                   "https://sonarcloud.io/api/project_branches/delete" \
                   -d "project=${SONAR_PROJECT_KEY}" \
-                  -d "branch=${PRODUCTION_BRANCH}"
+                  -d "branch=${SONAR_MAIN_BRANCH}"
               fi
               RENAME_HTTP="$(curl -s -o /tmp/sonar-rename.json -w '%{http_code}' -X POST -u "${SONAR_TOKEN}:" \
                 "https://sonarcloud.io/api/project_branches/rename" \
                 -d "project=${SONAR_PROJECT_KEY}" \
-                -d "name=${PRODUCTION_BRANCH}")"
+                -d "name=${SONAR_MAIN_BRANCH}")"
               if [ "$RENAME_HTTP" != "200" ] && [ "$RENAME_HTTP" != "204" ]; then
                 cat /tmp/sonar-rename.json || true
-                echo "::error::Could not rename SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}. Ensure SONAR_TOKEN has Administer Project on ${SONAR_PROJECT_KEY}."
+                echo "::error::Could not rename SonarCloud main branch from '${MAIN_NAME}' to ${SONAR_MAIN_BRANCH}. Ensure SONAR_TOKEN has Administer Project on ${SONAR_PROJECT_KEY}."
                 exit 1
               fi
-              echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}"
+              echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${SONAR_MAIN_BRANCH}"
             fi
           fi
           if [ "$QG_WAIT" = "true" ] && [ "$SONAR_EVENT_NAME" = "push" ]; then
             qg_http="$(curl -s -o /tmp/sonar-qg-preflight.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
               "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=${SONAR_BRANCH}")"
             if [ "$qg_http" != "200" ]; then
-              qg_body="$(cat /tmp/sonar-qg-preflight.json || true)"
-              if echo "$qg_body" | grep -q "non main branches"; then
-                echo "::error::SonarCloud Free plan cannot enforce quality gates on branch '${SONAR_BRANCH}'. Upgrade ${SONAR_ORGANIZATION} to the Team plan at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/billing — branch analysis on prod and dev requires Team or Enterprise. Do not disable the quality gate."
-              else
-                cat /tmp/sonar-qg-preflight.json || true
-                echo "::error::Cannot read SonarCloud quality gate for branch '${SONAR_BRANCH}' (HTTP ${qg_http}). Verify SONAR_TOKEN permissions and run the sonarcloud-setup workflow."
-              fi
+              cat /tmp/sonar-qg-preflight.json || true
+              echo "::error::Cannot read SonarCloud quality gate for branch '${SONAR_BRANCH}' (HTTP ${qg_http}). Verify SONAR_TOKEN permissions and run the sonarcloud-setup workflow."
               exit 1
             fi
             echo "SonarCloud quality gate API reachable for branch '${SONAR_BRANCH}'."
@@ -303,7 +315,11 @@ jobs:
             --results-directory "$GITHUB_WORKSPACE/coverage"
 
       - name: SonarCloud end
-        if: env.SONAR_TOKEN != ''
+        if: >-
+          env.SONAR_TOKEN != '' &&
+          (github.event_name == 'pull_request' ||
+           inputs.sonar_skip_branches == '' ||
+           !contains(format(',{0},', inputs.sonar_skip_branches), format(',{0},', github.ref_name)))
         run: dotnet sonarscanner end /d:sonar.token=$SONAR_TOKEN
 
       - name: Upload coverage results
@@ -337,6 +353,8 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       PRODUCTION_BRANCH: ${{ inputs.production_branch }}
       DEVELOPMENT_BRANCH: ${{ inputs.development_branch }}
+      SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch != '' && inputs.sonar_main_branch || inputs.production_branch }}
+      SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch != '' && inputs.sonar_main_branch || inputs.production_branch }}
     outputs:
       assembly_version: ${{ steps.setversion.outputs.assembly_version }}
       dll_version: ${{ steps.setversion.outputs.dll_version }}
@@ -396,11 +414,19 @@ jobs:
           echo "dll_version=$DLL_VERSION" >> $GITHUB_OUTPUT
 
       - name: Install SonarScanner
-        if: env.SONAR_TOKEN != ''
+        if: >-
+          env.SONAR_TOKEN != '' &&
+          (github.event_name == 'pull_request' ||
+           inputs.sonar_skip_branches == '' ||
+           !contains(format(',{0},', inputs.sonar_skip_branches), format(',{0},', github.ref_name)))
         run: dotnet tool install --global dotnet-sonarscanner
 
       - name: SonarCloud begin
-        if: env.SONAR_TOKEN != ''
+        if: >-
+          env.SONAR_TOKEN != '' &&
+          (github.event_name == 'pull_request' ||
+           inputs.sonar_skip_branches == '' ||
+           !contains(format(',{0},', inputs.sonar_skip_branches), format(',{0},', github.ref_name)))
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_EVENT_NAME: ${{ github.event_name }}
@@ -430,7 +456,7 @@ jobs:
             echo "::error::SonarCloud project '${SONAR_PROJECT_KEY}' was not found. Import the repository at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/projects or run the sonarcloud-setup workflow."
             exit 1
           fi
-          if [ "$SONAR_EVENT_NAME" = "push" ] && [ "$SONAR_BRANCH" = "$PRODUCTION_BRANCH" ]; then
+          if [ "$SONAR_EVENT_NAME" = "push" ] && [ "$SONAR_BRANCH" = "$SONAR_MAIN_BRANCH" ]; then
             BRANCHES_JSON="$(curl -sf -u "${SONAR_TOKEN}:" \
               "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}")"
             MAIN_NAME="$(echo "$BRANCHES_JSON" | jq -r '.branches[] | select(.isMain) | .name' | head -n 1)"
@@ -438,39 +464,34 @@ jobs:
               echo "::error::Could not determine SonarCloud main branch for ${SONAR_PROJECT_KEY}."
               exit 1
             fi
-            if [ "$MAIN_NAME" = "$PRODUCTION_BRANCH" ]; then
-              echo "SonarCloud main branch already ${PRODUCTION_BRANCH}"
+            if [ "$MAIN_NAME" = "$SONAR_MAIN_BRANCH" ]; then
+              echo "SonarCloud main branch already ${SONAR_MAIN_BRANCH}"
             else
-              if echo "$BRANCHES_JSON" | jq -e --arg branch "$PRODUCTION_BRANCH" '.branches[] | select(.name == $branch and (.isMain | not))' >/dev/null; then
-                echo "Deleting existing non-main branch ${PRODUCTION_BRANCH} before rename..."
+              if echo "$BRANCHES_JSON" | jq -e --arg branch "$SONAR_MAIN_BRANCH" '.branches[] | select(.name == $branch and (.isMain | not))' >/dev/null; then
+                echo "Deleting existing non-main branch ${SONAR_MAIN_BRANCH} before rename..."
                 curl -sf -X POST -u "${SONAR_TOKEN}:" \
                   "https://sonarcloud.io/api/project_branches/delete" \
                   -d "project=${SONAR_PROJECT_KEY}" \
-                  -d "branch=${PRODUCTION_BRANCH}"
+                  -d "branch=${SONAR_MAIN_BRANCH}"
               fi
               RENAME_HTTP="$(curl -s -o /tmp/sonar-rename.json -w '%{http_code}' -X POST -u "${SONAR_TOKEN}:" \
                 "https://sonarcloud.io/api/project_branches/rename" \
                 -d "project=${SONAR_PROJECT_KEY}" \
-                -d "name=${PRODUCTION_BRANCH}")"
+                -d "name=${SONAR_MAIN_BRANCH}")"
               if [ "$RENAME_HTTP" != "200" ] && [ "$RENAME_HTTP" != "204" ]; then
                 cat /tmp/sonar-rename.json || true
-                echo "::error::Could not rename SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}. Ensure SONAR_TOKEN has Administer Project on ${SONAR_PROJECT_KEY}."
+                echo "::error::Could not rename SonarCloud main branch from '${MAIN_NAME}' to ${SONAR_MAIN_BRANCH}. Ensure SONAR_TOKEN has Administer Project on ${SONAR_PROJECT_KEY}."
                 exit 1
               fi
-              echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${PRODUCTION_BRANCH}"
+              echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${SONAR_MAIN_BRANCH}"
             fi
           fi
           if [ "$QG_WAIT" = "true" ] && [ "$SONAR_EVENT_NAME" = "push" ]; then
             qg_http="$(curl -s -o /tmp/sonar-qg-preflight.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
               "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=${SONAR_BRANCH}")"
             if [ "$qg_http" != "200" ]; then
-              qg_body="$(cat /tmp/sonar-qg-preflight.json || true)"
-              if echo "$qg_body" | grep -q "non main branches"; then
-                echo "::error::SonarCloud Free plan cannot enforce quality gates on branch '${SONAR_BRANCH}'. Upgrade ${SONAR_ORGANIZATION} to the Team plan at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/billing — branch analysis on prod and dev requires Team or Enterprise. Do not disable the quality gate."
-              else
-                cat /tmp/sonar-qg-preflight.json || true
-                echo "::error::Cannot read SonarCloud quality gate for branch '${SONAR_BRANCH}' (HTTP ${qg_http}). Verify SONAR_TOKEN permissions and run the sonarcloud-setup workflow."
-              fi
+              cat /tmp/sonar-qg-preflight.json || true
+              echo "::error::Cannot read SonarCloud quality gate for branch '${SONAR_BRANCH}' (HTTP ${qg_http}). Verify SONAR_TOKEN permissions and run the sonarcloud-setup workflow."
               exit 1
             fi
             echo "SonarCloud quality gate API reachable for branch '${SONAR_BRANCH}'."
@@ -524,7 +545,11 @@ jobs:
             --results-directory "$GITHUB_WORKSPACE/coverage"
 
       - name: SonarCloud end
-        if: env.SONAR_TOKEN != ''
+        if: >-
+          env.SONAR_TOKEN != '' &&
+          (github.event_name == 'pull_request' ||
+           inputs.sonar_skip_branches == '' ||
+           !contains(format(',{0},', inputs.sonar_skip_branches), format(',{0},', github.ref_name)))
         run: dotnet sonarscanner end /d:sonar.token=$SONAR_TOKEN
 
       - name: Upload coverage results
