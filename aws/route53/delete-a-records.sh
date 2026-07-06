@@ -11,8 +11,12 @@ fi
 ZONE_NAME="$1"
 shift
 
-ZONE_ID=$(aws route53 list-hosted-zones-by-name --dns-name "$ZONE_NAME" \
-  --query "HostedZones[0].Id" --output text | sed 's|/hostedzone/||')
+if [ -n "${ROUTE53_ZONE_ID:-}" ]; then
+  ZONE_ID="${ROUTE53_ZONE_ID#/hostedzone/}"
+else
+  ZONE_ID=$(aws route53 list-hosted-zones-by-name --dns-name "$ZONE_NAME" \
+    --query "HostedZones[0].Id" --output text | sed 's|/hostedzone/||')
+fi
 
 if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" = "None" ]; then
   echo "Error: hosted zone not found for $ZONE_NAME" >&2
