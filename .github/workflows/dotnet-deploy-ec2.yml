@@ -271,18 +271,21 @@ jobs:
                 fi
               done
             fi
-            sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
+            if ! sudo chown -R ubuntu:www-data "$DEPLOY_PATH"; then
+              echo "::error::Failed to set ownership on $DEPLOY_PATH"
+              ls -la "$DEPLOY_PATH" || true
+              exit 1
+            fi
             SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
             NEEDS_SETUP=no
             if [ "$SETUP_CHANGED" != "no" ] || [ ! -f "$SERVICE_FILE" ]; then
               NEEDS_SETUP=yes
             else
               DEPLOYED_DLL=""
-              for dll in "$STAGING/site/"*.Web.dll; do
-                [ -f "$dll" ] || continue
-                DEPLOYED_DLL="$(basename "$dll")"
-                break
-              done
+              deployed_path="$(find "$STAGING/site" -maxdepth 1 -type f -name '*.Web.dll' 2>/dev/null | head -n1 || true)"
+              if [ -n "$deployed_path" ]; then
+                DEPLOYED_DLL="$(basename "$deployed_path")"
+              fi
               if [ -n "$DEPLOYED_DLL" ] && ! grep -qF "$DEPLOYED_DLL" "$SERVICE_FILE"; then
                 echo "[Deploy] Systemd unit does not reference $DEPLOYED_DLL; re-running configure-service.sh..."
                 NEEDS_SETUP=yes
