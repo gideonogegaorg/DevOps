@@ -27,9 +27,12 @@ Use when changing public hostnames, deploy paths, systemd service names, Postgre
 DEVOPS=/tmp/devops
 BUCKET=gideonogega-internal
 IP=35.172.36.171
+export ROUTE53_ZONE_ID=Z06793181SRD5TKXV643G  # goom.life hosted zone
 
 bash $DEVOPS/aws/route53/upsert-a-records.sh goom.life \
   familytree.goom.life=$IP familytree-dev.goom.life=$IP
+
+bash $DEVOPS/aws/iam/apply-ec2-s3-photos-policy.sh  # requires root/admin IAM
 
 bash $DEVOPS/aws/s3/migrate-prefix.sh $BUCKET family/prod familytree/prod
 bash $DEVOPS/aws/s3/migrate-prefix.sh $BUCKET family/dev familytree/dev
