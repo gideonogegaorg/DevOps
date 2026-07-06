@@ -6,13 +6,25 @@ Shared infrastructure scripts and CI templates for gideonogegaorg projects.
 
 | Path | Purpose |
 |------|---------|
-| `aws/` | Tech-stack agnostic AWS provisioning (IAM, S3) |
-| `ec2/` | Tech-stack agnostic EC2 host ops (Postgres backup, nginx) |
+| `aws/` | Tech-stack agnostic AWS provisioning (IAM, S3, Route 53) |
+| `ec2/` | Tech-stack agnostic EC2 host ops (Postgres backup, nginx, domain migration) |
 | `dotnet/` | .NET-specific CI templates and EC2 runtime installers |
 | `java/` | Java-specific (add when needed) |
 | `.github/workflows/` | Callable GitHub Actions entrypoints (thin wrappers) |
 
 **Rule:** agnostic items at repo root; stack-specific items under `{techstack}/`.
+
+## Route 53 and S3
+
+```bash
+# DNS A records
+bash aws/route53/upsert-a-records.sh goom.life app.example.com=1.2.3.4
+
+# Copy S3 objects between key prefixes (e.g. app rename)
+bash aws/s3/migrate-prefix.sh gideonogega-internal old-app/prod new-app/prod --dry-run
+```
+
+See `aws/route53/README.md` and `ec2/domain-migration.md` for full hostname/DB rename workflows.
 
 ## Postgres S3 backups
 
