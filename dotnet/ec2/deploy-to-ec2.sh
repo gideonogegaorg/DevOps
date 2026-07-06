@@ -89,6 +89,17 @@ fi
 cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
 sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
 
+# appsettings.json from CI is the single config source; legacy .env overrides caused stale DB names.
+if [ -f "$DEPLOY_PATH/.env" ]; then
+  echo "[Deploy] Removing legacy $DEPLOY_PATH/.env"
+  rm -f "$DEPLOY_PATH/.env"
+fi
+if [ -f "$SERVICE_FILE" ] && grep -q '^EnvironmentFile=-' "$SERVICE_FILE"; then
+  echo "[Deploy] Removing EnvironmentFile from $SERVICE_FILE"
+  sudo sed -i '/^EnvironmentFile=-/d' "$SERVICE_FILE"
+  sudo systemctl daemon-reload
+fi
+
 echo "[Deploy] Restarting service..."
 sudo systemctl restart "$SERVICE_NAME"
 if ! systemctl is-active --quiet "$SERVICE_NAME"; then

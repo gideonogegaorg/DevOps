@@ -30,7 +30,7 @@ Secrets `GH_USER` / `GH_CLASSIC_PAT` are optional when `use_gmo_feed` is `false`
 | `setup_changed` | `no` | Pass `yes`/`no` from caller (map paths-filter `true` → `yes`) |
 | `is_production` | `development` | `true`/`production` or `false`/`development` for configure-service.sh |
 | `generate_appsettings_script` | `scripts/generate-appsettings.sh` | Skip when empty |
-| `deploy_env_lines` | `""` | Lines written to `$DEPLOY_PATH/.env` |
+| `deploy_env_lines` | `""` | **Deprecated.** Use `appsettings.json` from CI instead; deploy removes legacy `.env` files. |
 | `extra_deploy_dirs` | `uploads` | Comma-separated dirs under deploy path |
 
 Secrets: `REMOTE_HOST`, `SSH_PRIVATE_KEY`, `AWS_*`, `SEC_GROUP_ID` (repo or org). **`PG_USER` / `PG_PASS`**: organization secrets only (`gideonogegaorg`); callers use `secrets: inherit`.

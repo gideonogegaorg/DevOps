@@ -51,7 +51,6 @@ After=network.target
 [Service]
 WorkingDirectory=$WEB_ROOT/site
 ExecStart=/usr/bin/dotnet $WEB_ROOT/site/$DLL_NAME --urls "http://localhost:$PORT"
-EnvironmentFile=-$WEB_ROOT/.env
 Restart=always
 RestartSec=10
 KillSignal=SIGINT

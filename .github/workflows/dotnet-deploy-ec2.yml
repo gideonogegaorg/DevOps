@@ -322,8 +322,7 @@ jobs:
               sudo bash "$STAGING/$CONFIG_SCRIPT" "$FULL_HOSTNAME" "$PORT" "$SERVICE_NAME" "$CERT_DOMAIN" "$PRODUCTION_MODE"
             fi
             if [ -n "$DEPLOY_ENV_LINES" ]; then
-              printf '%s\n' "$DEPLOY_ENV_LINES" > "$DEPLOY_PATH/.env"
-              chmod 600 "$DEPLOY_PATH/.env"
+              echo "::warning::deploy_env_lines is deprecated; bake config into appsettings.json instead. Ignoring .env write."
             fi
             echo "[Deploy] Copying site output..."
             if [ ! -d "$STAGING/site" ]; then
