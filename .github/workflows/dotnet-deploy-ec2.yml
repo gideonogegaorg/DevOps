@@ -81,6 +81,11 @@ on:
         required: false
         type: string
         default: "uploads"
+      remote_deploy_script:
+        required: false
+        type: string
+        default: ""
+        description: "When set (e.g. scripts/deploy-to-ec2.sh), SCP and run this bash script on EC2 instead of an inline SSH heredoc. Avoids GitHub Actions masking true in inline scripts."
     secrets:
       DEPLOY_DOMAIN:
         required: false
@@ -232,10 +237,32 @@ jobs:
           host: ${{ secrets.REMOTE_HOST }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "site/*,${{ inputs.configure_service_script }},${{ inputs.install_runtime_script }}"
+          source: ${{ inputs.remote_deploy_script != '' && format('site/*,{0},{1},{2}', inputs.configure_service_script, inputs.install_runtime_script, inputs.remote_deploy_script) || format('site/*,{0},{1}', inputs.configure_service_script, inputs.install_runtime_script) }}
           target: "/tmp/${{ inputs.app_name }}-deploy-${{ github.run_id }}"
 
       - name: Deploy to EC2 via SSH
+        if: inputs.remote_deploy_script != ''
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        with:
+          host: ${{ secrets.REMOTE_HOST }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            STAGING="/tmp/${{ inputs.app_name }}-deploy-${{ github.run_id }}"
+            export SETUP_CHANGED='${{ env.SETUP_CHANGED }}'
+            export DEPLOY_ENV_LINES='${{ inputs.deploy_env_lines }}'
+            bash "$STAGING/${{ inputs.remote_deploy_script }}" \
+              '${{ env.DEPLOY_PATH }}' \
+              '${{ env.FULL_HOSTNAME }}' \
+              '${{ env.PORT }}' \
+              '${{ env.SERVICE_NAME }}' \
+              '${{ env.CERT_DOMAIN }}' \
+              '${{ env.PRODUCTION_MODE }}' \
+              "$STAGING"
+
+      - name: Deploy to EC2 via SSH (inline)
+        if: inputs.remote_deploy_script == ''
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
         with:
           host: ${{ secrets.REMOTE_HOST }}
@@ -263,17 +290,16 @@ jobs:
             echo "[Deploy] Ensuring directory..."
             sudo mkdir -p "$DEPLOY_PATH/site" "$DEPLOY_PATH/logs"
             if [ -n "$EXTRA_DEPLOY_DIRS" ]; then
-              IFS=',' read -ra DIRS <<< "$EXTRA_DEPLOY_DIRS"
-              for d in "${DIRS[@]}"; do
+              for d in ${EXTRA_DEPLOY_DIRS//,/ }; do
                 trimmed="${d// /}"
-                if [ -n "$trimmed" ]; then
+                if [ -n "$trimmed" ] && [ "$trimmed" != "site" ] && [ "$trimmed" != "logs" ]; then
                   sudo mkdir -p "$DEPLOY_PATH/$trimmed"
                 fi
               done
             fi
             if ! sudo chown -R ubuntu:www-data "$DEPLOY_PATH"; then
               echo "::error::Failed to set ownership on $DEPLOY_PATH"
-              ls -la "$DEPLOY_PATH" || true
+              ls -la "$DEPLOY_PATH" || :
               exit 1
             fi
             SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -282,7 +308,7 @@ jobs:
               NEEDS_SETUP=yes
             else
               DEPLOYED_DLL=""
-              deployed_path="$(find "$STAGING/site" -maxdepth 1 -type f -name '*.Web.dll' 2>/dev/null | head -n1 || true)"
+              deployed_path="$(find "$STAGING/site" -maxdepth 1 -type f -name '*.Web.dll' 2>/dev/null | head -n1)"
               if [ -n "$deployed_path" ]; then
                 DEPLOYED_DLL="$(basename "$deployed_path")"
               fi
@@ -302,7 +328,7 @@ jobs:
             echo "[Deploy] Copying site output..."
             if [ ! -d "$STAGING/site" ]; then
               echo "::error::Missing staging site dir: $STAGING/site"
-              ls -la "$STAGING" || true
+              ls -la "$STAGING" || :
               exit 1
             fi
             cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
