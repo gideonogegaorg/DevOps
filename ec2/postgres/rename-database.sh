@@ -41,6 +41,7 @@ sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
 
 if [ "$BACKUP" = "yes" ]; then
   mkdir -p "$BACKUP_DIR"
+  chown postgres:postgres "$BACKUP_DIR"
   chmod 700 "$BACKUP_DIR"
   STAMP=$(date +%Y%m%d-%H%M%S)
   FILE="$BACKUP_DIR/${OLD}-${STAMP}.dump"
