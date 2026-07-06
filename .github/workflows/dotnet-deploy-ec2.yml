@@ -120,6 +120,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ github.repository }}-${{ github.ref_name }}
+      cancel-in-progress: false
     environment: ${{ github.ref_name }}
     env:
       DEPLOY_PATH: ${{ inputs.deploy_path }}
@@ -240,6 +243,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script_stop: true
           script: |
+            bash <<'DEPLOY_EOF'
             set -e
             DEPLOY_PATH='${{ env.DEPLOY_PATH }}'
             SETUP_CHANGED='${{ env.SETUP_CHANGED }}'
@@ -274,12 +278,11 @@ jobs:
               NEEDS_SETUP=yes
             else
               DEPLOYED_DLL=""
-              shopt -s nullglob
               for dll in "$STAGING/site/"*.Web.dll; do
+                [ -f "$dll" ] || continue
                 DEPLOYED_DLL="$(basename "$dll")"
                 break
               done
-              shopt -u nullglob
               if [ -n "$DEPLOYED_DLL" ] && ! grep -qF "$DEPLOYED_DLL" "$SERVICE_FILE"; then
                 echo "[Deploy] Systemd unit does not reference $DEPLOYED_DLL; re-running configure-service.sh..."
                 NEEDS_SETUP=yes
@@ -294,7 +297,12 @@ jobs:
               chmod 600 "$DEPLOY_PATH/.env"
             fi
             echo "[Deploy] Copying site output..."
-            cp -r "$STAGING/site/"* "$DEPLOY_PATH/site/"
+            if [ ! -d "$STAGING/site" ]; then
+              echo "::error::Missing staging site dir: $STAGING/site"
+              ls -la "$STAGING" || true
+              exit 1
+            fi
+            cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
             sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
             echo "[Deploy] Restarting service..."
             sudo systemctl restart "$SERVICE_NAME"
@@ -334,6 +342,7 @@ jobs:
               sudo journalctl -u "$SERVICE_NAME" -n 80 --no-pager
               exit 1
             fi
+            DEPLOY_EOF
 
       - name: Verify public site health
         run: |
