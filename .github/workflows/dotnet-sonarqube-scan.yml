@@ -354,7 +354,6 @@ jobs:
       PRODUCTION_BRANCH: ${{ inputs.production_branch }}
       DEVELOPMENT_BRANCH: ${{ inputs.development_branch }}
       SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch != '' && inputs.sonar_main_branch || inputs.production_branch }}
-      SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch != '' && inputs.sonar_main_branch || inputs.production_branch }}
     outputs:
       assembly_version: ${{ steps.setversion.outputs.assembly_version }}
       dll_version: ${{ steps.setversion.outputs.dll_version }}
