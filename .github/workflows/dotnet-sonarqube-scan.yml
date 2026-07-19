@@ -221,10 +221,12 @@ jobs:
         run: |
           EXCLUSIONS="${{ inputs.sonar_exclusions }}"
           COVERAGE_EXCLUSIONS="${{ inputs.sonar_coverage_exclusions }}"
-          QG_WAIT="true"
-          if [ "$SONAR_EVENT_NAME" = "pull_request" ]; then
-            # PR decoration uses SonarCloud's GitHub check; scanner QG wait often fails on short-lived branches.
-            QG_WAIT="false"
+          # Enforce scanner QG wait only on Sonar main (GitHub default). Long-lived
+          # non-main branches (e.g. prod) often fail wait with auth/first-analysis noise;
+          # PR decoration still reports QG via the SonarCloud GitHub check.
+          QG_WAIT="false"
+          if [ "$SONAR_EVENT_NAME" != "pull_request" ] && [ "$SONAR_BRANCH" = "$SONAR_MAIN_BRANCH" ]; then
+            QG_WAIT="true"
           fi
           if [ -z "$SONAR_TOKEN" ]; then
             echo "::error::SONAR_TOKEN is empty. Add the organization secret SONAR_TOKEN with Analyze and Quality Gate read permissions."
@@ -266,7 +268,7 @@ jobs:
               echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${SONAR_MAIN_BRANCH}"
             fi
           fi
-          if [ "$QG_WAIT" = "true" ] && [ "$SONAR_EVENT_NAME" = "push" ]; then
+          if [ "$QG_WAIT" = "true" ]; then
             qg_http="$(curl -s -o /tmp/sonar-qg-preflight.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
               "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=${SONAR_BRANCH}")"
             if [ "$qg_http" = "404" ]; then
@@ -456,10 +458,12 @@ jobs:
         run: |
           EXCLUSIONS="${{ inputs.sonar_exclusions }}"
           COVERAGE_EXCLUSIONS="${{ inputs.sonar_coverage_exclusions }}"
-          QG_WAIT="true"
-          if [ "$SONAR_EVENT_NAME" = "pull_request" ]; then
-            # PR decoration uses SonarCloud's GitHub check; scanner QG wait often fails on short-lived branches.
-            QG_WAIT="false"
+          # Enforce scanner QG wait only on Sonar main (GitHub default). Long-lived
+          # non-main branches (e.g. prod) often fail wait with auth/first-analysis noise;
+          # PR decoration still reports QG via the SonarCloud GitHub check.
+          QG_WAIT="false"
+          if [ "$SONAR_EVENT_NAME" != "pull_request" ] && [ "$SONAR_BRANCH" = "$SONAR_MAIN_BRANCH" ]; then
+            QG_WAIT="true"
           fi
           if [ -z "$SONAR_TOKEN" ]; then
             echo "::error::SONAR_TOKEN is empty. Add the organization secret SONAR_TOKEN with Analyze and Quality Gate read permissions."
@@ -501,7 +505,7 @@ jobs:
               echo "Renamed SonarCloud main branch from '${MAIN_NAME}' to ${SONAR_MAIN_BRANCH}"
             fi
           fi
-          if [ "$QG_WAIT" = "true" ] && [ "$SONAR_EVENT_NAME" = "push" ]; then
+          if [ "$QG_WAIT" = "true" ]; then
             qg_http="$(curl -s -o /tmp/sonar-qg-preflight.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
               "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=${SONAR_BRANCH}")"
             if [ "$qg_http" = "404" ]; then
