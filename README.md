@@ -48,13 +48,34 @@ App repos call reusable workflows:
 
 ```yaml
 uses: gideonogegaorg/DevOps/.github/workflows/dotnet-lint.yml@main
+uses: gideonogegaorg/DevOps/.github/workflows/dotnet-js-lint.yml@main
+uses: gideonogegaorg/DevOps/.github/workflows/dotnet-sonarqube-scan.yml@main
+uses: gideonogegaorg/DevOps/.github/workflows/dotnet-codeql.yml@main
+uses: gideonogegaorg/DevOps/.github/workflows/security-trivy.yml@main
+uses: gideonogegaorg/DevOps/.github/workflows/dotnet-tag.yml@main
+uses: gideonogegaorg/DevOps/.github/workflows/dotnet-deploy-ec2.yml@main
 ```
 
-See `dotnet/ci/` for template source; `.github/workflows/dotnet-*.yml` are GitHub-required entrypoints.
+See `dotnet/ci/` for template source; `.github/workflows/dotnet-*.yml` (and `security-trivy.yml`) are GitHub-required entrypoints.
+
+**Check names:** reusable workflow jobs appear on PRs as `{caller} / {callee}` (e.g. `lint / lint`, `build / build`). Require those contexts in branch rulesets. CodeQL/Trivy callers should use job ids `CodeQL` / `Trivy` so checks are `CodeQL / CodeQL` and `Trivy / Trivy`. Private repos without GitHub Code Security should set `upload_results: false` on CodeQL (analysis still runs) and keep Trivy SARIF upload best-effort.
+
+**Postgres build job** also starts RabbitMQ (`localhost:5672`) for apps that need a broker during integration tests.
 
 **Postgres credentials:** set `PG_USER` and `PG_PASS` once at the **organization** level. App repos should use `secrets: inherit` on deploy jobs and must not duplicate these on repo or environment secrets.
 
 **Deploy flags:** map paths-filter `setup_changed` to `yes`/`no` before passing to `dotnet-deploy-ec2` (GitHub masks the literal `true` in SSH scripts).
+
+## Shared Redis
+
+Applications share one host-local Redis service and isolate keys with their
+service-name prefix. Deployment pipelines run the idempotent recovery script:
+
+```bash
+sudo bash ec2/redis/ensure-redis.sh
+```
+
+See [ec2/redis/README.md](ec2/redis/README.md) for recovery and isolation rules.
 
 ## Adding a new tech stack
 

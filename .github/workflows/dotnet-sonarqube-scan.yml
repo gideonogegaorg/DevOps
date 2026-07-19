@@ -129,6 +129,16 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+      # Always available for callers that need a broker (e.g. SpotifySmartPlaylists). Harmless if unused.
+      rabbitmq:
+        image: rabbitmq:3-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:

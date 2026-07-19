@@ -1,0 +1,84 @@
+name: dotnet-codeql
+
+on:
+  workflow_call:
+    inputs:
+      solution_file:
+        required: true
+        type: string
+      dotnet_version:
+        required: false
+        type: string
+        default: "10.0.x"
+      generate_appsettings_script:
+        required: false
+        type: string
+        default: ""
+      use_gmo_feed:
+        required: false
+        type: string
+        default: "true"
+      languages:
+        required: false
+        type: string
+        default: csharp
+      queries:
+        required: false
+        type: string
+        default: security-extended
+      # Private repos without GitHub Code Security should pass "false" (analyze still runs; Actions check is the gate).
+      upload_results:
+        required: false
+        type: string
+        default: "true"
+    secrets:
+      GH_USER:
+        required: false
+      GH_CLASSIC_PAT:
+        required: false
+
+jobs:
+  CodeQL:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    env:
+      GITHUB_USERNAME: ${{ secrets.GH_USER }}
+      GITHUB_PAT: ${{ secrets.GH_CLASSIC_PAT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@e8e8e51caba890f74f97e228d00b0b81b666ee4c # v3
+        with:
+          languages: ${{ inputs.languages }}
+          queries: ${{ inputs.queries }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: ${{ inputs.dotnet_version }}
+
+      - name: Generate appsettings.json
+        if: inputs.generate_appsettings_script != ''
+        run: bash "${{ inputs.generate_appsettings_script }}"
+
+      - name: Configure NuGet auth for GMO feed
+        if: inputs.use_gmo_feed == 'true'
+        run: dotnet nuget update source GMO --username "$GITHUB_USERNAME" --password "$GITHUB_PAT" --store-password-in-clear-text
+
+      - name: Build for CodeQL
+        run: |
+          dotnet restore "${{ inputs.solution_file }}"
+          dotnet build "${{ inputs.solution_file }}" --no-restore
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@e8e8e51caba890f74f97e228d00b0b81b666ee4c # v3
+        with:
+          category: "/language:${{ inputs.languages }}"
+          upload: ${{ inputs.upload_results == 'true' && 'always' || 'never' }}

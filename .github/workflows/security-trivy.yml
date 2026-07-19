@@ -1,0 +1,50 @@
+name: security-trivy
+
+on:
+  workflow_call:
+    inputs:
+      severity:
+        required: false
+        type: string
+        default: CRITICAL,HIGH,MEDIUM
+      skip_dirs:
+        required: false
+        type: string
+        default: coverage,bin,obj,node_modules
+      # When true, fail the job on findings. SARIF upload is best-effort (needs Code Security on private repos).
+      fail_on_findings:
+        required: false
+        type: string
+        default: "true"
+
+jobs:
+  Trivy:
+    name: Trivy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Run Trivy vulnerability scanner (repo)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: ${{ inputs.severity }}
+          scanners: vuln,secret
+          skip-dirs: ${{ inputs.skip_dirs }}
+          exit-code: ${{ inputs.fail_on_findings == 'true' && '1' || '0' }}
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@e8e8e51caba890f74f97e228d00b0b81b666ee4c # v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
