@@ -269,12 +269,16 @@ jobs:
           if [ "$QG_WAIT" = "true" ] && [ "$SONAR_EVENT_NAME" = "push" ]; then
             qg_http="$(curl -s -o /tmp/sonar-qg-preflight.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
               "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=${SONAR_BRANCH}")"
-            if [ "$qg_http" != "200" ]; then
+            if [ "$qg_http" = "404" ]; then
+              # First analysis of a branch — component does not exist until this scan completes.
+              echo "SonarCloud branch '${SONAR_BRANCH}' not analyzed yet; skipping quality gate preflight."
+            elif [ "$qg_http" != "200" ]; then
               cat /tmp/sonar-qg-preflight.json || true
               echo "::error::Cannot read SonarCloud quality gate for branch '${SONAR_BRANCH}' (HTTP ${qg_http}). Verify SONAR_TOKEN permissions and run the sonarcloud-setup workflow."
               exit 1
+            else
+              echo "SonarCloud quality gate API reachable for branch '${SONAR_BRANCH}'."
             fi
-            echo "SonarCloud quality gate API reachable for branch '${SONAR_BRANCH}'."
           fi
           begin_args=(
             "/k:${SONAR_PROJECT_KEY}"
@@ -500,12 +504,16 @@ jobs:
           if [ "$QG_WAIT" = "true" ] && [ "$SONAR_EVENT_NAME" = "push" ]; then
             qg_http="$(curl -s -o /tmp/sonar-qg-preflight.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
               "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=${SONAR_BRANCH}")"
-            if [ "$qg_http" != "200" ]; then
+            if [ "$qg_http" = "404" ]; then
+              # First analysis of a branch — component does not exist until this scan completes.
+              echo "SonarCloud branch '${SONAR_BRANCH}' not analyzed yet; skipping quality gate preflight."
+            elif [ "$qg_http" != "200" ]; then
               cat /tmp/sonar-qg-preflight.json || true
               echo "::error::Cannot read SonarCloud quality gate for branch '${SONAR_BRANCH}' (HTTP ${qg_http}). Verify SONAR_TOKEN permissions and run the sonarcloud-setup workflow."
               exit 1
+            else
+              echo "SonarCloud quality gate API reachable for branch '${SONAR_BRANCH}'."
             fi
-            echo "SonarCloud quality gate API reachable for branch '${SONAR_BRANCH}'."
           fi
           begin_args=(
             "/k:${SONAR_PROJECT_KEY}"
