@@ -27,7 +27,8 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_ORGANIZATION: gideonogegaorg
       SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key }}
-      GITHUB_REPOSITORY: ${{ inputs.github_repository }}
+      # Do not use GITHUB_REPOSITORY — Actions reserves it for the workflow repo.
+      TARGET_GITHUB_REPOSITORY: ${{ inputs.github_repository }}
       SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch }}
     steps:
       - name: Require SonarCloud token
@@ -42,19 +43,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_CLASSIC_PAT }}
         run: |
           set -euo pipefail
-          repo_id="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .id)"
+          repo_id="$(gh api "repos/${TARGET_GITHUB_REPOSITORY}" --jq .id)"
           provision_http="$(curl -s -o /tmp/sonar-provision.json -w '%{http_code}' -u "${SONAR_TOKEN}:" -X POST \
             "https://sonarcloud.io/api/alm_integration/provision_projects" \
             -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "installationKeys=${GITHUB_REPOSITORY}|${repo_id}" \
+            --data-urlencode "installationKeys=${TARGET_GITHUB_REPOSITORY}|${repo_id}" \
             --data-urlencode "organization=${SONAR_ORGANIZATION}")"
           if [ "$provision_http" != "200" ] && [ "$provision_http" != "201" ]; then
             cat /tmp/sonar-provision.json || true
-            echo "::error::Could not provision ${GITHUB_REPOSITORY} in SonarCloud (HTTP ${provision_http})."
+            echo "::error::Could not provision ${TARGET_GITHUB_REPOSITORY} in SonarCloud (HTTP ${provision_http})."
             exit 1
           fi
           cat /tmp/sonar-provision.json
-          echo "Provisioned ${GITHUB_REPOSITORY} in SonarCloud."
+          echo "Provisioned ${TARGET_GITHUB_REPOSITORY} in SonarCloud."
 
       - name: Verify SonarCloud project exists
         run: |
