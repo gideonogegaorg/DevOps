@@ -317,6 +317,8 @@ jobs:
         run: mkdir -p working
 
       - name: Test (all projects)
+        env:
+          POSTGRES_CONNECTION_STRING: Host=localhost;Port=5432;Database=${{ inputs.postgres_db }};Username=${{ inputs.postgres_user }};Password=${{ inputs.postgres_password }}
         run: |
           mkdir -p coverage
           dotnet test "${{ inputs.solution_file }}" --no-build --verbosity normal \
@@ -546,6 +548,8 @@ jobs:
         run: mkdir -p working
 
       - name: Test (all projects)
+        env:
+          POSTGRES_CONNECTION_STRING: Host=localhost;Port=5432;Database=${{ inputs.postgres_db }};Username=${{ inputs.postgres_user }};Password=${{ inputs.postgres_password }}
         run: |
           mkdir -p coverage
           dotnet test "${{ inputs.solution_file }}" --no-build --verbosity normal \
