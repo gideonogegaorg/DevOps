@@ -1,0 +1,108 @@
+name: sonarcloud-provision-project
+
+on:
+  workflow_dispatch:
+    inputs:
+      github_repository:
+        description: "owner/repo to provision in SonarCloud"
+        required: true
+        type: string
+      sonar_project_key:
+        description: "SonarCloud project key (usually owner_repo)"
+        required: true
+        type: string
+      sonar_main_branch:
+        description: "SonarCloud main branch name"
+        required: true
+        type: string
+        default: prod
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_ORGANIZATION: gideonogegaorg
+      SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key }}
+      GITHUB_REPOSITORY: ${{ inputs.github_repository }}
+      SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch }}
+    steps:
+      - name: Require SonarCloud token
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "::error::SONAR_TOKEN is empty."
+            exit 1
+          fi
+
+      - name: Provision SonarCloud project from GitHub repository
+        env:
+          GH_TOKEN: ${{ secrets.GH_CLASSIC_PAT }}
+        run: |
+          set -euo pipefail
+          repo_id="$(gh api "repos/${GITHUB_REPOSITORY}" --jq .id)"
+          provision_http="$(curl -s -o /tmp/sonar-provision.json -w '%{http_code}' -u "${SONAR_TOKEN}:" -X POST \
+            "https://sonarcloud.io/api/alm_integration/provision_projects" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "installationKeys=${GITHUB_REPOSITORY}|${repo_id}" \
+            --data-urlencode "organization=${SONAR_ORGANIZATION}")"
+          if [ "$provision_http" != "200" ] && [ "$provision_http" != "201" ]; then
+            cat /tmp/sonar-provision.json || true
+            echo "::error::Could not provision ${GITHUB_REPOSITORY} in SonarCloud (HTTP ${provision_http})."
+            exit 1
+          fi
+          cat /tmp/sonar-provision.json
+          echo "Provisioned ${GITHUB_REPOSITORY} in SonarCloud."
+
+      - name: Verify SonarCloud project exists
+        run: |
+          set -euo pipefail
+          branches_json="$(curl -sf -u "${SONAR_TOKEN}:" \
+            "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}")"
+          echo "$branches_json" | jq -e '.branches | length > 0' >/dev/null
+          echo "SonarCloud project ${SONAR_PROJECT_KEY} is reachable."
+
+      - name: Align SonarCloud main branch
+        run: |
+          set -euo pipefail
+          branches_json="$(curl -sf -u "${SONAR_TOKEN}:" \
+            "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}")"
+          main_name="$(echo "$branches_json" | jq -r '.branches[] | select(.isMain) | .name' | head -n 1)"
+          if [ -z "$main_name" ]; then
+            echo "::error::Could not determine SonarCloud main branch for ${SONAR_PROJECT_KEY}."
+            exit 1
+          fi
+          if [ "$main_name" = "$SONAR_MAIN_BRANCH" ]; then
+            echo "SonarCloud main branch already ${SONAR_MAIN_BRANCH}."
+            exit 0
+          fi
+          if echo "$branches_json" | jq -e --arg branch "$SONAR_MAIN_BRANCH" '.branches[] | select(.name == $branch and (.isMain | not))' >/dev/null; then
+            curl -sf -X POST -u "${SONAR_TOKEN}:" \
+              "https://sonarcloud.io/api/project_branches/delete" \
+              -d "project=${SONAR_PROJECT_KEY}" \
+              -d "branch=${SONAR_MAIN_BRANCH}"
+          fi
+          rename_http="$(curl -s -o /tmp/sonar-rename.json -w '%{http_code}' -X POST -u "${SONAR_TOKEN}:" \
+            "https://sonarcloud.io/api/project_branches/rename" \
+            -d "project=${SONAR_PROJECT_KEY}" \
+            -d "name=${SONAR_MAIN_BRANCH}")"
+          if [ "$rename_http" != "200" ] && [ "$rename_http" != "204" ]; then
+            cat /tmp/sonar-rename.json || true
+            echo "::error::Could not rename SonarCloud main branch from '${main_name}' to ${SONAR_MAIN_BRANCH}."
+            exit 1
+          fi
+          echo "Renamed SonarCloud main branch from '${main_name}' to ${SONAR_MAIN_BRANCH}."
+
+      - name: Verify quality gate API access
+        run: |
+          set -euo pipefail
+          qg_http="$(curl -s -o /tmp/sonar-qg-main.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
+            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}&branch=${SONAR_MAIN_BRANCH}")"
+          if [ "$qg_http" != "200" ]; then
+            cat /tmp/sonar-qg-main.json || true
+            echo "::error::Cannot read quality gate for '${SONAR_MAIN_BRANCH}' (HTTP ${qg_http})."
+            exit 1
+          fi
+          echo "Quality gate API reachable for '${SONAR_MAIN_BRANCH}'."
