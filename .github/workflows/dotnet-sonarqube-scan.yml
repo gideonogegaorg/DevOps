@@ -25,7 +25,7 @@ on:
       sonar_main_branch:
         required: false
         type: string
-        default: ""
+        default: "dev"
       sonar_skip_branches:
         required: false
         type: string
@@ -110,7 +110,7 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       PRODUCTION_BRANCH: ${{ inputs.production_branch }}
       DEVELOPMENT_BRANCH: ${{ inputs.development_branch }}
-      SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch != '' && inputs.sonar_main_branch || inputs.production_branch }}
+      SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch }}
     outputs:
       assembly_version: ${{ steps.setversion.outputs.assembly_version }}
       dll_version: ${{ steps.setversion.outputs.dll_version }}
@@ -371,7 +371,7 @@ jobs:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       PRODUCTION_BRANCH: ${{ inputs.production_branch }}
       DEVELOPMENT_BRANCH: ${{ inputs.development_branch }}
-      SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch != '' && inputs.sonar_main_branch || inputs.production_branch }}
+      SONAR_MAIN_BRANCH: ${{ inputs.sonar_main_branch }}
     outputs:
       assembly_version: ${{ steps.setversion.outputs.assembly_version }}
       dll_version: ${{ steps.setversion.outputs.dll_version }}
