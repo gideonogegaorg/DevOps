@@ -15,7 +15,7 @@ on:
         description: "SonarCloud main branch name"
         required: true
         type: string
-        default: prod
+        default: dev
 
 permissions:
   contents: read
