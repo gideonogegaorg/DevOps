@@ -22,6 +22,10 @@ on:
         required: false
         type: string
         default: "true"
+      fail_on_vulnerable:
+        required: false
+        type: string
+        default: "true"
     secrets:
       GH_USER:
         required: false
@@ -58,6 +62,19 @@ jobs:
       - name: Restore
         run: dotnet restore "${{ inputs.solution_file }}" --verbosity normal
       - name: Audit NuGet packages for vulnerabilities
-        run: dotnet list "${{ inputs.solution_file }}" package --vulnerable --include-transitive
+        env:
+          SOLUTION_FILE: ${{ inputs.solution_file }}
+          FAIL_ON_VULNERABLE: ${{ inputs.fail_on_vulnerable }}
+        run: |
+          dotnet list "$SOLUTION_FILE" package --vulnerable --include-transitive
+          vulnerable="$(dotnet list "$SOLUTION_FILE" package --vulnerable --include-transitive --format json \
+            | jq '[.. | objects | .vulnerabilities? // empty | .[]] | length')"
+          if [ "$vulnerable" -gt 0 ]; then
+            if [ "$FAIL_ON_VULNERABLE" = "true" ]; then
+              echo "::error::Found ${vulnerable} known vulnerabilities in NuGet packages (see the list above). Upgrade the affected packages, or pin a patched transitive version in Directory.Packages.props."
+              exit 1
+            fi
+            echo "::warning::Found ${vulnerable} known vulnerabilities in NuGet packages (fail_on_vulnerable is off)."
+          fi
       - name: Verify format
         run: dotnet format "${{ inputs.solution_file }}" --verbosity diagnostic --verify-no-changes --no-restore

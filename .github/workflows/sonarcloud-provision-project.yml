@@ -60,9 +60,25 @@ jobs:
       - name: Verify SonarCloud project exists
         run: |
           set -euo pipefail
-          branches_json="$(curl -sf -u "${SONAR_TOKEN}:" \
-            "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}")"
-          echo "$branches_json" | jq -e '.branches | length > 0' >/dev/null
+          project_http="$(curl -s -o /tmp/sonar-project.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
+            "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}" || true)"
+          case "$project_http" in
+            200) ;;
+            401)
+              echo "::error::SonarCloud rejected SONAR_TOKEN (HTTP 401): the token is invalid or expired. Generate a new one at https://sonarcloud.io/account/security and update the organization secret SONAR_TOKEN."
+              exit 1 ;;
+            403)
+              echo "::error::SONAR_TOKEN has no access to SonarCloud project '${SONAR_PROJECT_KEY}' (HTTP 403)."
+              exit 1 ;;
+            404)
+              echo "::error::SonarCloud project '${SONAR_PROJECT_KEY}' was not found (HTTP 404). Check sonar_project_key matches the provisioned project."
+              exit 1 ;;
+            *)
+              cat /tmp/sonar-project.json 2>/dev/null || true
+              echo "::error::SonarCloud project check for '${SONAR_PROJECT_KEY}' failed (HTTP ${project_http:-none})."
+              exit 1 ;;
+          esac
+          jq -e '.branches | length > 0' /tmp/sonar-project.json >/dev/null
           echo "SonarCloud project ${SONAR_PROJECT_KEY} is reachable."
 
       - name: Align SonarCloud main branch

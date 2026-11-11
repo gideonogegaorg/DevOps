@@ -10,8 +10,11 @@ Reference implementations for GitHub reusable workflows. Callable entrypoints li
 | `use_gmo_feed` | `true` | When `false`, skip GMO NuGet auth |
 | `verify_appsettings_not_tracked` | `true` | Fail if committed appsettings files exist |
 | `generate_appsettings_script` | `""` | Optional pre-restore script |
+| `fail_on_vulnerable` | `true` | Fail when `dotnet list package --vulnerable --include-transitive` reports any known vulnerability; `false` downgrades it to a warning |
 
 Secrets `GH_USER` / `GH_CLASSIC_PAT` are optional when `use_gmo_feed` is `false`.
+
+Callers do not need a separate NuGet audit job; this one covers direct and transitive packages.
 
 ## dotnet-sonarqube-scan.yml
 

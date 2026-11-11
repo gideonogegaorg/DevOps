@@ -13,3 +13,5 @@ inputs:
     default: ""
   verify_appsettings_not_tracked:
     default: "true"
+  fail_on_vulnerable:
+    default: "true"
