@@ -150,11 +150,11 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: dorny/paths-filter@f3360c560367c9daf72b88c0e6164162034c5721 # v3
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: github.event_name == 'push' && inputs.setup_paths_filter != ''
         id: filter
         with:
@@ -404,11 +404,11 @@ jobs:
       dll_version: ${{ steps.setversion.outputs.dll_version }}
       setup_changed: ${{ steps.filter.outputs.setup }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: dorny/paths-filter@f3360c560367c9daf72b88c0e6164162034c5721 # v3
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: github.event_name == 'push' && inputs.setup_paths_filter != ''
         id: filter
         with:
