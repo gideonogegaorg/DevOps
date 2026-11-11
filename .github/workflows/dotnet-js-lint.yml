@@ -19,6 +19,6 @@ jobs:
           node-version: ${{ inputs.node_version }}
           cache: npm
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Lint JavaScript
         run: npm run lint:js

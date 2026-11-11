@@ -3,8 +3,8 @@
 # Usage: sudo ./install-aspnetcore-runtime.sh
 set -euo pipefail
 
-if [ "$EUID" -ne 0 ]; then
-  echo "Error: Please run as root (sudo)"
+if [[ "$EUID" -ne 0 ]]; then
+  echo "Error: Please run as root (sudo)" >&2
   exit 1
 fi
 
@@ -12,7 +12,7 @@ DOTNET_BIN="${DOTNET_BIN:-/usr/bin/dotnet}"
 RUNTIME_PACKAGE="aspnetcore-runtime-10.0"
 
 has_aspnetcore_10() {
-  if [ ! -x "$DOTNET_BIN" ]; then
+  if [[ ! -x "$DOTNET_BIN" ]]; then
     return 1
   fi
   "$DOTNET_BIN" --list-runtimes 2>/dev/null | grep -qE 'Microsoft\.AspNetCore\.App 10\.'
@@ -38,7 +38,7 @@ fi
 apt-get install -y "$RUNTIME_PACKAGE"
 
 if ! has_aspnetcore_10; then
-  echo "Error: $RUNTIME_PACKAGE installed but Microsoft.AspNetCore.App 10.x not found."
+  echo "Error: $RUNTIME_PACKAGE installed but Microsoft.AspNetCore.App 10.x not found." >&2
   "$DOTNET_BIN" --list-runtimes 2>&1 || true
   exit 1
 fi

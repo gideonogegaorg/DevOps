@@ -3,7 +3,7 @@
 # Usage: sudo bash remove-systemd-service.sh <service-name>
 set -euo pipefail
 
-if [ "$#" -ne 1 ]; then
+if [[ "$#" -ne 1 ]]; then
   echo "Usage: sudo $0 <service-name>" >&2
   exit 1
 fi
@@ -11,7 +11,7 @@ fi
 SERVICE="$1"
 UNIT="/etc/systemd/system/${SERVICE}.service"
 
-if [ "$EUID" -ne 0 ]; then
+if [[ "$EUID" -ne 0 ]]; then
   echo "Error: run as root (sudo)" >&2
   exit 1
 fi

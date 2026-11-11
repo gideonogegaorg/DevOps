@@ -5,7 +5,7 @@
 #   bash upsert-a-records.sh goom.life familytree.goom.life=35.172.36.171
 set -euo pipefail
 
-if [ "$#" -lt 2 ]; then
+if [[ "$#" -lt 2 ]]; then
   echo "Usage: $0 <zone-name> <fqdn>=<ip> [<fqdn>=<ip> ...]" >&2
   exit 1
 fi
@@ -13,14 +13,14 @@ fi
 ZONE_NAME="$1"
 shift
 
-if [ -n "${ROUTE53_ZONE_ID:-}" ]; then
+if [[ -n "${ROUTE53_ZONE_ID:-}" ]]; then
   ZONE_ID="${ROUTE53_ZONE_ID#/hostedzone/}"
 else
   ZONE_ID=$(aws route53 list-hosted-zones-by-name --dns-name "$ZONE_NAME" \
     --query "HostedZones[0].Id" --output text | sed 's|/hostedzone/||')
 fi
 
-if [ -z "$ZONE_ID" ] || [ "$ZONE_ID" = "None" ]; then
+if [[ -z "$ZONE_ID" ]] || [[ "$ZONE_ID" = "None" ]]; then
   echo "Error: hosted zone not found for $ZONE_NAME" >&2
   exit 1
 fi
@@ -29,7 +29,7 @@ CHANGES=""
 for pair in "$@"; do
   name="${pair%%=*}"
   ip="${pair#*=}"
-  if [ -z "$name" ] || [ -z "$ip" ] || [ "$name" = "$pair" ]; then
+  if [[ -z "$name" ]] || [[ -z "$ip" ]] || [[ "$name" = "$pair" ]]; then
     echo "Error: invalid pair '$pair' (expected fqdn=ip)" >&2
     exit 1
   fi

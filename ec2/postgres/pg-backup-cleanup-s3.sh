@@ -16,17 +16,17 @@ CUTOFF_EPOCH=$(date -u -d "${RETENTION_DAYS} days ago" +%s)
 TOKEN=""
 
 while true; do
-  if [ -n "$TOKEN" ]; then
+  if [[ -n "$TOKEN" ]]; then
     RESP=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "${PREFIX}/" --starting-token "$TOKEN" --output json)
   else
     RESP=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "${PREFIX}/" --output json)
   fi
 
   while IFS=$'\t' read -r key lastmod; do
-    [ -z "$key" ] && continue
+    [[ -z "$key" ]] && continue
     mod_epoch=$(date -u -d "$lastmod" +%s 2>/dev/null || echo 0)
-    if [ "$mod_epoch" -lt "$CUTOFF_EPOCH" ]; then
-      if [ "$DRY_RUN" = "1" ]; then
+    if [[ "$mod_epoch" -lt "$CUTOFF_EPOCH" ]]; then
+      if [[ "$DRY_RUN" = "1" ]]; then
         log "DRY_RUN: would delete s3://${BUCKET}/${key} (modified $lastmod)"
       else
         log "Deleting s3://${BUCKET}/${key} (modified $lastmod)"
@@ -36,7 +36,7 @@ while true; do
   done < <(echo "$RESP" | jq -r '.Contents[]? | [.Key, .LastModified] | @tsv')
 
   TOKEN=$(echo "$RESP" | jq -r '.NextContinuationToken // empty')
-  [ -z "$TOKEN" ] && break
+  [[ -z "$TOKEN" ]] && break
 done
 
 log "Cleanup finished (retention=${RETENTION_DAYS}d, dry_run=${DRY_RUN})."

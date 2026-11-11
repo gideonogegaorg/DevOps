@@ -25,7 +25,7 @@ mapfile -t DATABASES < <(
     "SELECT datname FROM pg_database WHERE datistemplate = false AND datname NOT IN ('postgres');"
 )
 
-if [ "${#DATABASES[@]}" -eq 0 ]; then
+if [[ "${#DATABASES[@]}" -eq 0 ]]; then
   log "ERROR: No databases found to backup."
   exit 1
 fi
@@ -33,7 +33,7 @@ fi
 FAILED=0
 for db in "${DATABASES[@]}"; do
   db=$(echo "$db" | tr -d '[:space:]')
-  [ -z "$db" ] && continue
+  [[ -z "$db" ]] && continue
   tmp="${BACKUP_DIR}/${db}-${DATE}.dump.gz"
   s3_key="${PREFIX}/${db}/${DATE}.dump.gz"
   log "Backing up database: $db"
@@ -51,7 +51,7 @@ for db in "${DATABASES[@]}"; do
   fi
 done
 
-if [ "$FAILED" -ne 0 ]; then
+if [[ "$FAILED" -ne 0 ]]; then
   log "Backup completed with errors."
   exit 1
 fi
