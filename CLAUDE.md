@@ -8,7 +8,7 @@ Shared infrastructure scripts and reusable GitHub Actions workflows for `gideono
 
 ## Layout rule
 
-Tech-stack agnostic items live at the root (`aws/` for workstation-side AWS provisioning, `ec2/` for host ops). Stack-specific items live under `{stack}/` (`dotnet/`, `java/` is a placeholder). When adding a stack, create `{stack}/ci/` and `{stack}/ec2/` and thin entrypoints at `.github/workflows/{stack}-*.yml`.
+Tech-stack agnostic items live at the root (`aws/` for workstation-side AWS provisioning, `github/` for org setup with `gh`, `ec2/` for host ops). Stack-specific items live under `{stack}/` (`dotnet/`, `java/` is a placeholder). When adding a stack, create `{stack}/ci/` and `{stack}/ec2/` and thin entrypoints at `.github/workflows/{stack}-*.yml`.
 
 ## Workflows
 
@@ -29,11 +29,12 @@ Tech-stack agnostic items live at the root (`aws/` for workstation-side AWS prov
 
 - All files are LF with no BOM, enforced by `.gitattributes` and `.editorconfig`. CRLF or a BOM breaks shebangs, `set -o pipefail` and the cron file on the host.
 - Scripts run as `sudo bash <script>` on Ubuntu and are expected to be idempotent (safe on every deploy), e.g. `ec2/redis/ensure-redis.sh`.
-- `deploy-to-ec2.sh` resolves helper scripts from the staging dir in order: `DevOps/...`, then repo-root-relative, then the app's `scripts/`. Moving a script here changes those paths.
+- `deploy-to-ec2.sh` resolves helper scripts from the staging dir in order: `CONFIGURE_SCRIPT_PATH` / `RUNTIME_SCRIPT_PATH` when set (the workflow passes its script inputs), then `DevOps/...`, then repo-root-relative, then the app's `scripts/`. Moving a script here changes those paths. Family runs it from its own job without those variables, so their defaults must keep its behaviour; that is why `HEALTH_PATH` (local HTTP 200 check) is skipped when unset, since Family's `/` redirects to login.
+- `ec2/nginx/configure-subdomain.sh` exits non-zero and rolls back its nginx site when `nginx -t` fails, so a broken nginx config anywhere on the host fails every app's setup deploy.
 - Shared Redis: one loopback-only instance at `127.0.0.1:6379`; apps isolate by a service-name key prefix (`music:`, `music-dev:`), not DB numbers. Never expose 6379. See `ec2/redis/README.md`.
 - Postgres backups: daily dump of every database to `s3://gideonogega-postgres-backups/ec2-ubuntu/{db}/{YYYY-MM-DD}.dump.gz`, installed by `ec2/postgres/install-postgres-backup.sh`.
 - Hostname and database renames follow `ec2/domain-migration.md` and `aws/route53/README.md`. Route 53 scripts accept `ROUTE53_ZONE_ID` when `ListHostedZones` is denied.
 
 ## Checking changes
 
-There is no local CI. Syntax-check a changed script with `bash -n path/to/script.sh`. Lint workflows, including their embedded shell, with `docker run --rm -v "$(pwd -W):/repo" -w /repo rhysd/actionlint:1.7.7 -no-color -oneline` from Git Bash (prefix `MSYS_NO_PATHCONV=1`); compare against `origin/main` because `dotnet-sonarqube-scan.yml` carries existing SC2086 notes. Workflow changes can only be proven by a run from a caller repo, so point a caller at the feature branch (`@<branch>` instead of `@main`) before merging.
+There is no local CI. Syntax-check a changed script with `bash -n path/to/script.sh` and lint it with `MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/mnt:ro" -w /mnt koalaman/shellcheck:stable -x <files>`. Script tests: `bash dotnet/ci/tests/test-generate-appsettings.sh` (needs `jq`), and `ec2/nginx/tests/test-configure-subdomain.sh` inside a throwaway Ubuntu container (command in its header). Lint workflows, including their embedded shell, with `docker run --rm -v "$(pwd -W):/repo" -w /repo rhysd/actionlint:1.7.12 -no-color -oneline` from Git Bash (prefix `MSYS_NO_PATHCONV=1`); compare against `origin/main` because `dotnet-sonarqube-scan.yml` carries existing SC2086 notes. Workflow changes can only be proven by a run from a caller repo, so point a caller at the feature branch (`@<branch>` instead of `@main`) before merging.

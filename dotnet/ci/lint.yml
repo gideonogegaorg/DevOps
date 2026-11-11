@@ -1,7 +1,7 @@
 # dotnet lint + audit template (reference)
 # Implemented in .github/workflows/dotnet-lint.yml
 #
-# Steps: checkout, setup dotnet, optional appsettings gen, nuget auth,
+# Steps: checkout, setup dotnet, optional appsettings gen (app script or DevOps generate-appsettings.sh), nuget auth,
 #        restore, vulnerable package audit, dotnet format verify
 
 inputs:
@@ -15,3 +15,9 @@ inputs:
     default: "true"
   fail_on_vulnerable:
     default: "true"
+  appsettings_template:
+    default: ""
+  appsettings_defaults:
+    default: ""
+  devops_ref:
+    default: "main"

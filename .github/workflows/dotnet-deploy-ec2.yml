@@ -86,6 +86,66 @@ on:
         type: string
         default: ""
         description: "When set (e.g. scripts/deploy-to-ec2.sh), SCP and run this bash script on EC2 instead of an inline SSH heredoc. Avoids GitHub Actions masking true in inline scripts."
+      ssh_host:
+        required: false
+        type: string
+        default: ""
+        description: "SSH/SCP target. Empty falls back to the REMOTE_HOST secret."
+      appsettings_env:
+        required: false
+        type: string
+        default: ""
+        description: "Newline-separated KEY=VALUE (non-secret) exported to the generate-appsettings step. Blank lines and # comments are skipped."
+      appsettings_secret_names:
+        required: false
+        type: string
+        default: ""
+        description: "Space-separated secret names exported to the generate-appsettings step. Needs secrets: inherit. A trailing ? marks a secret optional."
+      ensure_redis:
+        required: false
+        type: string
+        default: "no"
+        description: "yes/no. When yes, run DevOps ec2/redis/ensure-redis.sh on the host before deploying."
+      devops_ref:
+        required: false
+        type: string
+        default: "main"
+        description: "Ref of gideonogegaorg/DevOps checked out to ./DevOps when ensure_redis is yes or a script input starts with DevOps/."
+      dll_name:
+        required: false
+        type: string
+        default: ""
+        description: "Exported as DLL_NAME to remote_deploy_script (DevOps deploy-to-ec2.sh needs it when the app dll is not *.Web.dll)."
+      restrict_appsettings:
+        required: false
+        type: string
+        default: "no"
+        description: "yes/no. When yes, chmod 600 site/appsettings.json on the host (service must run as ubuntu)."
+      use_gmo_feed:
+        required: false
+        type: string
+        default: "false"
+        description: "When true, authenticate the GMO NuGet source (from the caller's nuget.config) with GH_USER/GH_CLASSIC_PAT before publish."
+      appsettings_template:
+        required: false
+        type: string
+        default: ""
+        description: "appsettings template (path ending in .template). When set, DevOps dotnet/ci/generate-appsettings.sh renders it next to itself instead of running generate_appsettings_script."
+      appsettings_defaults:
+        required: false
+        type: string
+        default: ""
+        description: "Optional KEY=VALUE defaults file passed to the generic generator with appsettings_template."
+      robots_path:
+        required: false
+        type: string
+        default: ""
+        description: "When set (e.g. src/App.Web/wwwroot/robots.txt), write allow-all robots.txt for production and disallow-all otherwise, instead of running generate_robots_script."
+      health_path:
+        required: false
+        type: string
+        default: "/"
+        description: "Exported as HEALTH_PATH to remote_deploy_script; DevOps deploy-to-ec2.sh expects HTTP 200 from it locally after /health. Empty skips that check."
     secrets:
       DEPLOY_DOMAIN:
         required: false
@@ -98,7 +158,7 @@ on:
       GH_CLASSIC_PAT:
         required: false
       REMOTE_HOST:
-        required: true
+        required: false
       SSH_PRIVATE_KEY:
         required: true
       AWS_ACCESS_KEY_ID:
@@ -132,10 +192,13 @@ jobs:
     env:
       DEPLOY_PATH: ${{ inputs.deploy_path }}
       FULL_HOSTNAME: ${{ inputs.full_hostname }}
+      SSH_HOST: ${{ inputs.ssh_host != '' && inputs.ssh_host || secrets.REMOTE_HOST }}
       BRANCH: ${{ github.ref_name }}
       ASSEMBLY_VERSION: ${{ inputs.assembly_version }}
       DLL_VERSION: ${{ inputs.dll_version }}
       SETUP_CHANGED: ${{ (inputs.setup_changed == 'true' || inputs.setup_changed == 'yes') && 'yes' || 'no' }}
+      ENSURE_REDIS: ${{ (inputs.ensure_redis == 'true' || inputs.ensure_redis == 'yes') && 'yes' || 'no' }}
+      RESTRICT_APPSETTINGS: ${{ (inputs.restrict_appsettings == 'true' || inputs.restrict_appsettings == 'yes') && 'yes' || 'no' }}
       PORT: ${{ inputs.port }}
       SERVICE_NAME: ${{ inputs.service_name }}
       CERT_DOMAIN: ${{ inputs.cert_domain }}
@@ -157,8 +220,18 @@ jobs:
       SEC_GROUP_ID: ${{ secrets.SEC_GROUP_ID }}
       PHOTOS_APP_NAME: ${{ inputs.photos_app_name != '' && inputs.photos_app_name || inputs.app_name }}
       PHOTOS_ENVIRONMENT: ${{ inputs.photos_environment }}
+      STAGING: /tmp/${{ inputs.app_name }}-deploy-${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout DevOps scripts
+        if: inputs.ensure_redis == 'yes' || inputs.ensure_redis == 'true' || inputs.appsettings_template != '' || startsWith(inputs.remote_deploy_script, 'DevOps/') || startsWith(inputs.install_runtime_script, 'DevOps/') || startsWith(inputs.configure_service_script, 'DevOps/')
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: gideonogegaorg/DevOps
+          ref: ${{ inputs.devops_ref }}
+          path: DevOps
+          persist-credentials: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
@@ -175,6 +248,10 @@ jobs:
             echo "::error::DEPLOY_PATH is invalid."
             exit 1
           fi
+          if [ -z "$SSH_HOST" ]; then
+            echo "::error::No SSH host. Pass the ssh_host input or set the REMOTE_HOST secret."
+            exit 1
+          fi
           if [ -z "$PORT" ]; then
             echo "::error::PORT is empty. Set the PORT variable on the GitHub environment (prod/dev) and pass it through a caller job with environment: set."
             exit 1
@@ -189,7 +266,7 @@ jobs:
           fi
 
       - name: Generate appsettings.json for deploy
-        if: inputs.generate_appsettings_script != ''
+        if: inputs.generate_appsettings_script != '' || inputs.appsettings_template != ''
         env:
           SERILOG_LOG_PATH: ${{ env.DEPLOY_PATH }}/logs
           UPLOADS_PATH: ${{ env.DEPLOY_PATH }}/uploads
@@ -200,11 +277,115 @@ jobs:
           PHOTOS_LOCAL_BASE_PATH: uploads/photos
           TELEMETRY_ENVIRONMENT_NAME: ${{ github.ref_name }}
           IS_PRODUCTION: ${{ env.IS_PRODUCTION }}
-        run: bash "${{ inputs.generate_appsettings_script }}"
+          GENERATE_SCRIPT: ${{ inputs.generate_appsettings_script }}
+          APPSETTINGS_TEMPLATE: ${{ inputs.appsettings_template }}
+          APPSETTINGS_DEFAULTS: ${{ inputs.appsettings_defaults }}
+          APPSETTINGS_ENV: ${{ inputs.appsettings_env }}
+          APPSETTINGS_SECRET_NAMES: ${{ inputs.appsettings_secret_names }}
+          # The whole secrets context (all inherited secrets) is exposed only when names are requested.
+          SECRETS_JSON: ${{ inputs.appsettings_secret_names != '' && toJSON(secrets) || '{}' }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$APPSETTINGS_TEMPLATE" ]]; then
+            if [[ "$APPSETTINGS_TEMPLATE" != *.template ]]; then
+              echo "::error::appsettings_template must end in .template."
+              exit 1
+            fi
+            if [[ "$PRODUCTION_MODE" == "production" ]]; then
+              export IS_PRODUCTION=true
+            else
+              export IS_PRODUCTION=false
+            fi
+          fi
+          line_no=0
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            line_no=$((line_no + 1))
+            line="${line%$'\r'}"
+            if [[ -z "${line//[[:space:]]/}" ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
+              continue
+            fi
+            if [[ "$line" != *=* ]]; then
+              echo "::error::appsettings_env line ${line_no} has no '='."
+              exit 1
+            fi
+            key="${line%%=*}"
+            key="${key//[[:space:]]/}"
+            if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+              echo "::error::appsettings_env line ${line_no} has an invalid variable name."
+              exit 1
+            fi
+            export "$key=${line#*=}"
+          done <<< "$APPSETTINGS_ENV"
+
+          read -ra secret_names <<< "$APPSETTINGS_SECRET_NAMES"
+          for name in "${secret_names[@]}"; do
+            optional=no
+            if [[ "$name" == *"?" ]]; then
+              optional=yes
+              name="${name%"?"}"
+            fi
+            if [[ ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+              echo "::error::appsettings_secret_names has an invalid name: $name"
+              exit 1
+            fi
+            value="$(jq -r --arg n "$name" '.[$n] // empty' <<< "$SECRETS_JSON")"
+            if [[ -z "$value" ]]; then
+              if [[ "$optional" == "yes" ]]; then
+                echo "::warning::Optional secret $name is not set; exporting it empty."
+              else
+                echo "::error::Secret $name is not set. Set it on the repo, org or ${GITHUB_REF_NAME} environment, and call this workflow with secrets: inherit."
+                exit 1
+              fi
+            fi
+            while IFS= read -r mask_line; do
+              if [[ -n "$mask_line" ]]; then
+                echo "::add-mask::$mask_line"
+              fi
+            done <<< "$value"
+            export "$name=$value"
+          done
+          unset SECRETS_JSON value
+
+          if [[ -n "$APPSETTINGS_TEMPLATE" ]]; then
+            bash DevOps/dotnet/ci/generate-appsettings.sh "$APPSETTINGS_TEMPLATE" "${APPSETTINGS_TEMPLATE%.template}" ${APPSETTINGS_DEFAULTS:+"$APPSETTINGS_DEFAULTS"}
+          else
+            bash "$GENERATE_SCRIPT"
+          fi
 
       - name: Generate robots.txt
-        if: inputs.generate_robots_script != ''
+        if: inputs.generate_robots_script != '' && inputs.robots_path == ''
         run: bash "${{ inputs.generate_robots_script }}"
+
+      - name: Write robots.txt
+        if: inputs.robots_path != ''
+        env:
+          ROBOTS_PATH: ${{ inputs.robots_path }}
+        run: |
+          set -euo pipefail
+          if [[ "$ROBOTS_PATH" == /* ]] || [[ "$ROBOTS_PATH" == *..* ]]; then
+            echo "::error::robots_path must be a repo-relative path without '..'."
+            exit 1
+          fi
+          mkdir -p "$(dirname "$ROBOTS_PATH")"
+          if [[ "$PRODUCTION_MODE" == "production" ]]; then
+            printf 'User-agent: *\nAllow: /\n' > "$ROBOTS_PATH"
+            echo "Wrote $ROBOTS_PATH (production, allow indexing)"
+          else
+            printf 'User-agent: *\nDisallow: /\n' > "$ROBOTS_PATH"
+            echo "Wrote $ROBOTS_PATH (non-production, block indexing)"
+          fi
+
+      - name: Check NuGet auth for GMO feed
+        if: inputs.use_gmo_feed == 'true'
+        run: |
+          if [ -z "$GITHUB_PAT" ]; then
+            echo "::error::GITHUB_PAT is empty. Add secret GH_CLASSIC_PAT (with read:packages)."
+            exit 1
+          fi
+
+      - name: Configure NuGet auth for GMO feed
+        if: inputs.use_gmo_feed == 'true'
+        run: dotnet nuget update source GMO --username "$GITHUB_USERNAME" --password "$GITHUB_PAT" --store-password-in-clear-text
 
       - name: Publish
         run: |
@@ -216,7 +397,14 @@ jobs:
 
       - name: Get GitHub Runner IP
         id: ip
-        run: echo "ipv4=$(curl -s https://api.ipify.org)" >> $GITHUB_OUTPUT
+        run: |
+          set -euo pipefail
+          ipv4="$(curl -fsS --retry 3 https://api.ipify.org)"
+          if [[ ! "$ipv4" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+            echo "::error::Could not determine the runner's public IPv4 address."
+            exit 1
+          fi
+          echo "ipv4=$ipv4" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -226,31 +414,91 @@ jobs:
           aws-region: us-east-1
 
       - name: Authorize Runner IP in Security Group
+        env:
+          RUNNER_IP: ${{ steps.ip.outputs.ipv4 }}
         run: |
-          aws ec2 authorize-security-group-ingress \
-            --group-id "$SEC_GROUP_ID" \
-            --protocol tcp --port 22 --cidr ${{ steps.ip.outputs.ipv4 }}/32
+          set -uo pipefail
+          echo "Runner IP: $RUNNER_IP"
+          if ! output="$(aws ec2 authorize-security-group-ingress --group-id "$SEC_GROUP_ID" --protocol tcp --port 22 --cidr "$RUNNER_IP/32" 2>&1)"; then
+            if grep -q 'InvalidPermission.Duplicate' <<< "$output"; then
+              echo "Ingress rule for $RUNNER_IP/32 already present."
+            else
+              echo "$output" >&2
+              echo "::error::Failed to authorize $RUNNER_IP/32 on port 22."
+              exit 1
+            fi
+          fi
+
+      - name: Wait for SSH port
+        run: |
+          echo "Waiting for ${SSH_HOST}:22 ..."
+          for attempt in $(seq 1 18); do
+            if timeout 5 bash -c "cat < /dev/null > /dev/tcp/${SSH_HOST}/22" 2>/dev/null; then
+              echo "Port 22 reachable on attempt ${attempt}."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Cannot reach ${SSH_HOST}:22 from the runner 90s after the security group change."
+          exit 1
+
+      - name: Resolve staged files
+        id: stage
+        env:
+          CONFIGURE_SERVICE_SCRIPT: ${{ inputs.configure_service_script }}
+          INSTALL_RUNTIME_SCRIPT: ${{ inputs.install_runtime_script }}
+          REMOTE_DEPLOY_SCRIPT: ${{ inputs.remote_deploy_script }}
+        run: |
+          source="site/*,${CONFIGURE_SERVICE_SCRIPT},${INSTALL_RUNTIME_SCRIPT}"
+          if [ -n "$REMOTE_DEPLOY_SCRIPT" ]; then
+            source="${source},${REMOTE_DEPLOY_SCRIPT}"
+          fi
+          if [ "$ENSURE_REDIS" = "yes" ]; then
+            source="${source},DevOps/ec2/redis/ensure-redis.sh"
+          fi
+          echo "Staging: $source"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
 
       - name: Copy site output to EC2
         uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
         with:
-          host: ${{ secrets.REMOTE_HOST }}
+          host: ${{ env.SSH_HOST }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: ${{ inputs.remote_deploy_script != '' && format('site/*,{0},{1},{2}', inputs.configure_service_script, inputs.install_runtime_script, inputs.remote_deploy_script) || format('site/*,{0},{1}', inputs.configure_service_script, inputs.install_runtime_script) }}
-          target: "/tmp/${{ inputs.app_name }}-deploy-${{ github.run_id }}"
+          source: ${{ steps.stage.outputs.source }}
+          target: ${{ env.STAGING }}
+
+      - name: Ensure shared Redis on EC2
+        if: env.ENSURE_REDIS == 'yes'
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ env.SSH_HOST }}
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            echo "[Deploy] Ensuring shared Redis..."
+            sudo bash '${{ env.STAGING }}/DevOps/ec2/redis/ensure-redis.sh'
 
       - name: Deploy to EC2 via SSH
         if: inputs.remote_deploy_script != ''
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
-          host: ${{ secrets.REMOTE_HOST }}
+          host: ${{ env.SSH_HOST }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            STAGING="/tmp/${{ inputs.app_name }}-deploy-${{ github.run_id }}"
+            STAGING='${{ env.STAGING }}'
             export SETUP_CHANGED='${{ env.SETUP_CHANGED }}'
             export DEPLOY_ENV_LINES='${{ inputs.deploy_env_lines }}'
+            export CONFIGURE_SCRIPT_PATH='${{ inputs.configure_service_script }}'
+            export RUNTIME_SCRIPT_PATH='${{ inputs.install_runtime_script }}'
+            export EXTRA_DEPLOY_DIRS='${{ inputs.extra_deploy_dirs }}'
+            export RESTRICT_APPSETTINGS='${{ env.RESTRICT_APPSETTINGS }}'
+            export HEALTH_PATH='${{ inputs.health_path }}'
+            if [ -n '${{ inputs.dll_name }}' ]; then
+              export DLL_NAME='${{ inputs.dll_name }}'
+            fi
             bash "$STAGING/${{ inputs.remote_deploy_script }}" \
               '${{ env.DEPLOY_PATH }}' \
               '${{ env.FULL_HOSTNAME }}' \
@@ -264,7 +512,7 @@ jobs:
         if: inputs.remote_deploy_script == ''
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
-          host: ${{ secrets.REMOTE_HOST }}
+          host: ${{ env.SSH_HOST }}
           username: ubuntu
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
@@ -279,7 +527,8 @@ jobs:
             PRODUCTION_MODE='${{ env.PRODUCTION_MODE }}'
             DEPLOY_ENV_LINES='${{ inputs.deploy_env_lines }}'
             EXTRA_DEPLOY_DIRS='${{ inputs.extra_deploy_dirs }}'
-            STAGING="/tmp/${{ inputs.app_name }}-deploy-${{ github.run_id }}"
+            RESTRICT_APPSETTINGS='${{ env.RESTRICT_APPSETTINGS }}'
+            STAGING='${{ env.STAGING }}'
             CONFIG_SCRIPT="${{ inputs.configure_service_script }}"
             RUNTIME_SCRIPT="${{ inputs.install_runtime_script }}"
             trap 'rm -rf "$STAGING"' EXIT
@@ -330,6 +579,18 @@ jobs:
             fi
             cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
             sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
+            if [ "$RESTRICT_APPSETTINGS" = "yes" ] && [ -f "$DEPLOY_PATH/site/appsettings.json" ]; then
+              chmod 600 "$DEPLOY_PATH/site/appsettings.json"
+            fi
+            if [ -f "$DEPLOY_PATH/.env" ]; then
+              echo "[Deploy] Removing legacy $DEPLOY_PATH/.env"
+              rm -f "$DEPLOY_PATH/.env"
+            fi
+            if [ -f "$SERVICE_FILE" ] && grep -q '^EnvironmentFile=-' "$SERVICE_FILE"; then
+              echo "[Deploy] Removing EnvironmentFile from $SERVICE_FILE"
+              sudo sed -i '/^EnvironmentFile=-/d' "$SERVICE_FILE"
+              sudo systemctl daemon-reload
+            fi
             echo "[Deploy] Restarting service..."
             sudo systemctl restart "$SERVICE_NAME"
             if ! systemctl is-active --quiet "$SERVICE_NAME"; then
@@ -393,8 +654,17 @@ jobs:
           done
 
       - name: Revoke Runner IP (Cleanup)
-        if: always()
+        if: always() && steps.ip.outputs.ipv4 != ''
+        env:
+          RUNNER_IP: ${{ steps.ip.outputs.ipv4 }}
         run: |
-          aws ec2 revoke-security-group-ingress \
-            --group-id "$SEC_GROUP_ID" \
-            --protocol tcp --port 22 --cidr ${{ steps.ip.outputs.ipv4 }}/32
+          set -uo pipefail
+          if ! output="$(aws ec2 revoke-security-group-ingress --group-id "$SEC_GROUP_ID" --protocol tcp --port 22 --cidr "$RUNNER_IP/32" 2>&1)"; then
+            if grep -q 'InvalidPermission.NotFound' <<< "$output"; then
+              echo "Ingress rule for $RUNNER_IP/32 already absent."
+            else
+              echo "$output" >&2
+              echo "::error::Failed to revoke $RUNNER_IP/32; remove it from security group manually."
+              exit 1
+            fi
+          fi

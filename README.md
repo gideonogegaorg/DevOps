@@ -7,6 +7,7 @@ Shared infrastructure scripts and CI templates for gideonogegaorg projects.
 | Path | Purpose |
 |------|---------|
 | `aws/` | Tech-stack agnostic AWS provisioning (IAM, S3, Route 53) |
+| `github/` | GitHub organization setup with `gh` (org secrets) |
 | `ec2/` | Tech-stack agnostic EC2 host ops (Postgres backup, nginx, domain migration) |
 | `dotnet/` | .NET-specific CI templates and EC2 runtime installers |
 | `java/` | Java-specific (add when needed) |

@@ -24,3 +24,45 @@ inputs:
     required: true
   setup_changed:
     default: "no"
+  deploy_path:
+    required: true
+  full_hostname:
+    required: true
+  port:
+    required: true
+  service_name:
+    required: true
+  cert_domain:
+    required: true
+  is_production:
+    default: "development"
+  require_postgres:
+    default: "yes"
+  extra_deploy_dirs:
+    default: "uploads"
+  remote_deploy_script:
+    default: ""
+  ssh_host:
+    default: ""
+  appsettings_env:
+    default: ""
+  appsettings_secret_names:
+    default: ""
+  ensure_redis:
+    default: "no"
+  devops_ref:
+    default: "main"
+  dll_name:
+    default: ""
+  restrict_appsettings:
+    default: "no"
+  use_gmo_feed:
+    default: "false"
+  appsettings_template:
+    default: ""
+  appsettings_defaults:
+    default: ""
+  robots_path:
+    default: ""
+  health_path:
+    default: "/"

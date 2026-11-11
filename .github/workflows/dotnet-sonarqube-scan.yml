@@ -14,6 +14,21 @@ on:
         required: false
         type: string
         default: ""
+      appsettings_template:
+        required: false
+        type: string
+        default: ""
+        description: "appsettings template (path ending in .template). When set, DevOps dotnet/ci/generate-appsettings.sh renders it next to itself instead of running generate_appsettings_script."
+      appsettings_defaults:
+        required: false
+        type: string
+        default: ""
+        description: "Optional KEY=VALUE defaults file passed to the generic generator with appsettings_template."
+      devops_ref:
+        required: false
+        type: string
+        default: "main"
+        description: "Ref of gideonogegaorg/DevOps checked out when appsettings_template is set."
       # Repo script run with bash after setup-dotnet, before build (e.g. install mono-complete for net48).
       pre_build_script:
         required: false
@@ -188,9 +203,29 @@ jobs:
         if: inputs.use_gmo_feed == 'true'
         run: dotnet nuget update source GMO --username "$GITHUB_USERNAME" --password "$GITHUB_PAT" --store-password-in-clear-text
 
+      - name: Checkout DevOps scripts
+        if: inputs.appsettings_template != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: gideonogegaorg/DevOps
+          ref: ${{ inputs.devops_ref }}
+          path: DevOps
+          persist-credentials: false
       - name: Generate appsettings.json for build
-        if: inputs.generate_appsettings_script != ''
+        if: inputs.generate_appsettings_script != '' && inputs.appsettings_template == ''
         run: bash "${{ inputs.generate_appsettings_script }}"
+      - name: Generate appsettings.json for build from template
+        if: inputs.appsettings_template != ''
+        env:
+          APPSETTINGS_TEMPLATE: ${{ inputs.appsettings_template }}
+          APPSETTINGS_DEFAULTS: ${{ inputs.appsettings_defaults }}
+        run: |
+          if [[ "$APPSETTINGS_TEMPLATE" != *.template ]]; then
+            echo "::error::appsettings_template must end in .template."
+            exit 1
+          fi
+          bash DevOps/dotnet/ci/generate-appsettings.sh "$APPSETTINGS_TEMPLATE" "${APPSETTINGS_TEMPLATE%.template}" ${APPSETTINGS_DEFAULTS:+"$APPSETTINGS_DEFAULTS"}
+          rm -rf DevOps
 
       - name: Run pre-build script
         if: inputs.pre_build_script != ''
@@ -470,9 +505,29 @@ jobs:
         if: inputs.use_gmo_feed == 'true'
         run: dotnet nuget update source GMO --username "$GITHUB_USERNAME" --password "$GITHUB_PAT" --store-password-in-clear-text
 
+      - name: Checkout DevOps scripts
+        if: inputs.appsettings_template != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: gideonogegaorg/DevOps
+          ref: ${{ inputs.devops_ref }}
+          path: DevOps
+          persist-credentials: false
       - name: Generate appsettings.json for build
-        if: inputs.generate_appsettings_script != ''
+        if: inputs.generate_appsettings_script != '' && inputs.appsettings_template == ''
         run: bash "${{ inputs.generate_appsettings_script }}"
+      - name: Generate appsettings.json for build from template
+        if: inputs.appsettings_template != ''
+        env:
+          APPSETTINGS_TEMPLATE: ${{ inputs.appsettings_template }}
+          APPSETTINGS_DEFAULTS: ${{ inputs.appsettings_defaults }}
+        run: |
+          if [[ "$APPSETTINGS_TEMPLATE" != *.template ]]; then
+            echo "::error::appsettings_template must end in .template."
+            exit 1
+          fi
+          bash DevOps/dotnet/ci/generate-appsettings.sh "$APPSETTINGS_TEMPLATE" "${APPSETTINGS_TEMPLATE%.template}" ${APPSETTINGS_DEFAULTS:+"$APPSETTINGS_DEFAULTS"}
+          rm -rf DevOps
 
       - name: Run pre-build script
         if: inputs.pre_build_script != ''

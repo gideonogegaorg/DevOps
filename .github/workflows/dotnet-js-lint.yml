@@ -6,7 +6,7 @@ on:
       node_version:
         required: false
         type: string
-        default: "22"
+        default: "26"
 
 jobs:
   js-lint:
