@@ -246,15 +246,26 @@ jobs:
             echo "::error::SONAR_TOKEN is empty. Add the organization secret SONAR_TOKEN with Analyze and Quality Gate read permissions."
             exit 1
           fi
-          PROJECT_JSON="$(curl -sf -u "${SONAR_TOKEN}:" \
+          PROJECT_HTTP="$(curl -s -o /tmp/sonar-project.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
             "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}" || true)"
-          if ! echo "$PROJECT_JSON" | grep -q "\"name\""; then
-            echo "::error::SonarCloud project '${SONAR_PROJECT_KEY}' was not found. Import the repository at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/projects or run the sonarcloud-setup workflow."
-            exit 1
-          fi
+          case "$PROJECT_HTTP" in
+            200) ;;
+            401)
+              echo "::error::SonarCloud rejected SONAR_TOKEN (HTTP 401): the token is invalid or expired. Generate a new one at https://sonarcloud.io/account/security and update the organization secret SONAR_TOKEN."
+              exit 1 ;;
+            403)
+              echo "::error::SONAR_TOKEN has no access to SonarCloud project '${SONAR_PROJECT_KEY}' (HTTP 403). Grant the token's user Browse and Execute Analysis on the project."
+              exit 1 ;;
+            404)
+              echo "::error::SonarCloud project '${SONAR_PROJECT_KEY}' was not found (HTTP 404). Import the repository at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/projects or run the sonarcloud-provision-project workflow."
+              exit 1 ;;
+            *)
+              cat /tmp/sonar-project.json 2>/dev/null || true
+              echo "::error::SonarCloud project check for '${SONAR_PROJECT_KEY}' failed (HTTP ${PROJECT_HTTP:-none})."
+              exit 1 ;;
+          esac
           if [ "$SONAR_EVENT_NAME" = "push" ] && [ "$SONAR_BRANCH" = "$SONAR_MAIN_BRANCH" ]; then
-            BRANCHES_JSON="$(curl -sf -u "${SONAR_TOKEN}:" \
-              "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}")"
+            BRANCHES_JSON="$(cat /tmp/sonar-project.json)"
             MAIN_NAME="$(echo "$BRANCHES_JSON" | jq -r '.branches[] | select(.isMain) | .name' | head -n 1)"
             if [ -z "$MAIN_NAME" ]; then
               echo "::error::Could not determine SonarCloud main branch for ${SONAR_PROJECT_KEY}."
@@ -500,15 +511,26 @@ jobs:
             echo "::error::SONAR_TOKEN is empty. Add the organization secret SONAR_TOKEN with Analyze and Quality Gate read permissions."
             exit 1
           fi
-          PROJECT_JSON="$(curl -sf -u "${SONAR_TOKEN}:" \
+          PROJECT_HTTP="$(curl -s -o /tmp/sonar-project.json -w '%{http_code}' -u "${SONAR_TOKEN}:" \
             "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}" || true)"
-          if ! echo "$PROJECT_JSON" | grep -q "\"name\""; then
-            echo "::error::SonarCloud project '${SONAR_PROJECT_KEY}' was not found. Import the repository at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/projects or run the sonarcloud-setup workflow."
-            exit 1
-          fi
+          case "$PROJECT_HTTP" in
+            200) ;;
+            401)
+              echo "::error::SonarCloud rejected SONAR_TOKEN (HTTP 401): the token is invalid or expired. Generate a new one at https://sonarcloud.io/account/security and update the organization secret SONAR_TOKEN."
+              exit 1 ;;
+            403)
+              echo "::error::SONAR_TOKEN has no access to SonarCloud project '${SONAR_PROJECT_KEY}' (HTTP 403). Grant the token's user Browse and Execute Analysis on the project."
+              exit 1 ;;
+            404)
+              echo "::error::SonarCloud project '${SONAR_PROJECT_KEY}' was not found (HTTP 404). Import the repository at https://sonarcloud.io/organizations/${SONAR_ORGANIZATION}/projects or run the sonarcloud-provision-project workflow."
+              exit 1 ;;
+            *)
+              cat /tmp/sonar-project.json 2>/dev/null || true
+              echo "::error::SonarCloud project check for '${SONAR_PROJECT_KEY}' failed (HTTP ${PROJECT_HTTP:-none})."
+              exit 1 ;;
+          esac
           if [ "$SONAR_EVENT_NAME" = "push" ] && [ "$SONAR_BRANCH" = "$SONAR_MAIN_BRANCH" ]; then
-            BRANCHES_JSON="$(curl -sf -u "${SONAR_TOKEN}:" \
-              "https://sonarcloud.io/api/project_branches/list?project=${SONAR_PROJECT_KEY}")"
+            BRANCHES_JSON="$(cat /tmp/sonar-project.json)"
             MAIN_NAME="$(echo "$BRANCHES_JSON" | jq -r '.branches[] | select(.isMain) | .name' | head -n 1)"
             if [ -z "$MAIN_NAME" ]; then
               echo "::error::Could not determine SonarCloud main branch for ${SONAR_PROJECT_KEY}."

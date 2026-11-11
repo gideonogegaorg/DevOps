@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-Shared infrastructure scripts and reusable GitHub Actions workflows for `gideonogegaorg` app repos. There is no build or test suite: the deliverables are bash scripts that run on an Ubuntu EC2 host or an operator workstation, and `workflow_call` workflows that app repos consume as `uses: gideonogegaorg/DevOps/.github/workflows/<name>.yml@main`. Anything merged to `main` goes live for every caller at once.
+Shared infrastructure scripts and reusable GitHub Actions workflows for `gideonogegaorg` app repos. There is no build or test suite: the deliverables are bash scripts that run on an Ubuntu EC2 host or an operator workstation, and `workflow_call` workflows that app repos consume as `uses: gideonogegaorg/DevOps/.github/workflows/<name>.yml@main`. Anything merged to `main` goes live for every caller at once. Callers stay on `@main`; introduce a version tag only for a breaking change (removed or renamed inputs, renamed jobs, defaults that fail existing callers), so callers can move to it deliberately.
 
 ## Layout rule
 
@@ -36,4 +36,4 @@ Tech-stack agnostic items live at the root (`aws/` for workstation-side AWS prov
 
 ## Checking changes
 
-There is no local CI. Syntax-check a changed script with `bash -n path/to/script.sh`. Workflow changes can only be proven by a run from a caller repo, so point a caller at the feature branch (`@<branch>` instead of `@main`) before merging.
+There is no local CI. Syntax-check a changed script with `bash -n path/to/script.sh`. Lint workflows, including their embedded shell, with `docker run --rm -v "$(pwd -W):/repo" -w /repo rhysd/actionlint:1.7.7 -no-color -oneline` from Git Bash (prefix `MSYS_NO_PATHCONV=1`); compare against `origin/main` because `dotnet-sonarqube-scan.yml` carries existing SC2086 notes. Workflow changes can only be proven by a run from a caller repo, so point a caller at the feature branch (`@<branch>` instead of `@main`) before merging.
