@@ -14,6 +14,11 @@ on:
         required: false
         type: string
         default: ""
+      # Repo script run with bash after setup-dotnet, before build (e.g. install mono-complete for net48).
+      pre_build_script:
+        required: false
+        type: string
+        default: ""
       production_branch:
         required: false
         type: string
@@ -50,6 +55,11 @@ on:
         required: false
         type: string
         default: coverlet.runsettings
+      # When set, dotnet test runs only this TFM (coverlet collects nothing under Mono for net48).
+      test_framework:
+        required: false
+        type: string
+        default: ""
       playwright_install_glob:
         required: false
         type: string
@@ -173,6 +183,10 @@ jobs:
         if: inputs.generate_appsettings_script != ''
         run: bash "${{ inputs.generate_appsettings_script }}"
 
+      - name: Run pre-build script
+        if: inputs.pre_build_script != ''
+        run: bash "${{ inputs.pre_build_script }}"
+
       - name: Set version
         id: setversion
         env:
@@ -325,12 +339,25 @@ jobs:
       - name: Test (all projects)
         env:
           POSTGRES_CONNECTION_STRING: Host=localhost;Port=5432;Database=${{ inputs.postgres_db }};Username=${{ inputs.postgres_user }};Password=${{ inputs.postgres_password }}
+          COVERLET_RUNSETTINGS: ${{ inputs.coverlet_runsettings }}
+          TEST_FRAMEWORK: ${{ inputs.test_framework }}
         run: |
           mkdir -p coverage
-          dotnet test "${{ inputs.solution_file }}" --no-build --verbosity normal \
-            --settings "$GITHUB_WORKSPACE/${{ inputs.coverlet_runsettings }}" \
-            --collect:"XPlat Code Coverage;Format=opencover" \
+          test_args=(
+            --no-build
+            --verbosity normal
+            --collect:"XPlat Code Coverage;Format=opencover"
             --results-directory "$GITHUB_WORKSPACE/coverage"
+          )
+          if [ -n "$COVERLET_RUNSETTINGS" ] && [ -f "$GITHUB_WORKSPACE/$COVERLET_RUNSETTINGS" ]; then
+            test_args+=(--settings "$GITHUB_WORKSPACE/$COVERLET_RUNSETTINGS")
+          else
+            echo "::notice::Runsettings '$COVERLET_RUNSETTINGS' not found; running tests without --settings."
+          fi
+          if [ -n "$TEST_FRAMEWORK" ]; then
+            test_args+=(--framework "$TEST_FRAMEWORK")
+          fi
+          dotnet test "${{ inputs.solution_file }}" "${test_args[@]}"
 
       - name: SonarCloud end
         if: >-
@@ -410,6 +437,10 @@ jobs:
         if: inputs.generate_appsettings_script != ''
         run: bash "${{ inputs.generate_appsettings_script }}"
 
+      - name: Run pre-build script
+        if: inputs.pre_build_script != ''
+        run: bash "${{ inputs.pre_build_script }}"
+
       - name: Set version
         id: setversion
         env:
@@ -562,12 +593,25 @@ jobs:
       - name: Test (all projects)
         env:
           POSTGRES_CONNECTION_STRING: Host=localhost;Port=5432;Database=${{ inputs.postgres_db }};Username=${{ inputs.postgres_user }};Password=${{ inputs.postgres_password }}
+          COVERLET_RUNSETTINGS: ${{ inputs.coverlet_runsettings }}
+          TEST_FRAMEWORK: ${{ inputs.test_framework }}
         run: |
           mkdir -p coverage
-          dotnet test "${{ inputs.solution_file }}" --no-build --verbosity normal \
-            --settings "$GITHUB_WORKSPACE/${{ inputs.coverlet_runsettings }}" \
-            --collect:"XPlat Code Coverage;Format=opencover" \
+          test_args=(
+            --no-build
+            --verbosity normal
+            --collect:"XPlat Code Coverage;Format=opencover"
             --results-directory "$GITHUB_WORKSPACE/coverage"
+          )
+          if [ -n "$COVERLET_RUNSETTINGS" ] && [ -f "$GITHUB_WORKSPACE/$COVERLET_RUNSETTINGS" ]; then
+            test_args+=(--settings "$GITHUB_WORKSPACE/$COVERLET_RUNSETTINGS")
+          else
+            echo "::notice::Runsettings '$COVERLET_RUNSETTINGS' not found; running tests without --settings."
+          fi
+          if [ -n "$TEST_FRAMEWORK" ]; then
+            test_args+=(--framework "$TEST_FRAMEWORK")
+          fi
+          dotnet test "${{ inputs.solution_file }}" "${test_args[@]}"
 
       - name: SonarCloud end
         if: >-
