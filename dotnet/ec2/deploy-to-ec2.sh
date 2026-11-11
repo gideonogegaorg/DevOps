@@ -15,7 +15,7 @@ trap 'rm -rf "$STAGING"' EXIT
 
 resolve_script() {
   for candidate in "$@"; do
-    if [ -f "$candidate" ]; then
+    if [[ -f "$candidate" ]]; then
       echo "$candidate"
       return 0
     fi
@@ -32,7 +32,7 @@ CONFIGURE_SCRIPT=$(resolve_script \
   "$STAGING/ec2/nginx/configure-subdomain.sh" \
   "$STAGING/scripts/configure-subdomain.sh")
 
-if [ -z "$RUNTIME_SCRIPT" ] || [ -z "$CONFIGURE_SCRIPT" ]; then
+if [[ -z "$RUNTIME_SCRIPT" ]] || [[ -z "$CONFIGURE_SCRIPT" ]]; then
   echo "::error::Missing runtime or configure script in staging dir"
   ls -laR "$STAGING" || :
   exit 1
@@ -51,29 +51,29 @@ fi
 
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 NEEDS_SETUP=no
-if [ "${SETUP_CHANGED:-no}" != "no" ] || [ ! -f "$SERVICE_FILE" ]; then
+if [[ "${SETUP_CHANGED:-no}" != "no" ]] || [[ ! -f "$SERVICE_FILE" ]]; then
   NEEDS_SETUP=yes
 else
   DEPLOYED_DLL=""
   deployed_path="$(find "$STAGING/site" -maxdepth 1 -type f -name '*.Web.dll' 2>/dev/null | head -n1)"
-  if [ -n "$deployed_path" ]; then
+  if [[ -n "$deployed_path" ]]; then
     DEPLOYED_DLL="$(basename "$deployed_path")"
   fi
-  if [ -n "$DEPLOYED_DLL" ] && ! grep -qF "$DEPLOYED_DLL" "$SERVICE_FILE"; then
+  if [[ -n "$DEPLOYED_DLL" ]] && ! grep -qF "$DEPLOYED_DLL" "$SERVICE_FILE"; then
     echo "[Deploy] Systemd unit does not reference $DEPLOYED_DLL; re-running configure-subdomain.sh..."
     NEEDS_SETUP=yes
   fi
 fi
 
-if [ "$NEEDS_SETUP" = "yes" ]; then
+if [[ "$NEEDS_SETUP" = "yes" ]]; then
   echo "[Deploy] Running configure-subdomain.sh..."
-  if [ -z "${DLL_NAME:-}" ]; then
+  if [[ -z "${DLL_NAME:-}" ]]; then
     deployed_path="$(find "$STAGING/site" -maxdepth 1 -type f -name '*.Web.dll' 2>/dev/null | head -n1)"
-    if [ -n "$deployed_path" ]; then
+    if [[ -n "$deployed_path" ]]; then
       export DLL_NAME="$(basename "$deployed_path")"
     fi
   fi
-  if [ -z "${DLL_NAME:-}" ]; then
+  if [[ -z "${DLL_NAME:-}" ]]; then
     echo "::error::DLL_NAME not set and no *.Web.dll found in staging site"
     exit 1
   fi
@@ -81,7 +81,7 @@ if [ "$NEEDS_SETUP" = "yes" ]; then
 fi
 
 echo "[Deploy] Copying site output..."
-if [ ! -d "$STAGING/site" ]; then
+if [[ ! -d "$STAGING/site" ]]; then
   echo "::error::Missing staging site dir: $STAGING/site"
   ls -la "$STAGING" || :
   exit 1
@@ -90,11 +90,11 @@ cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
 sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
 
 # appsettings.json from CI is the single config source; legacy .env overrides caused stale DB names.
-if [ -f "$DEPLOY_PATH/.env" ]; then
+if [[ -f "$DEPLOY_PATH/.env" ]]; then
   echo "[Deploy] Removing legacy $DEPLOY_PATH/.env"
   rm -f "$DEPLOY_PATH/.env"
 fi
-if [ -f "$SERVICE_FILE" ] && grep -q '^EnvironmentFile=-' "$SERVICE_FILE"; then
+if [[ -f "$SERVICE_FILE" ]] && grep -q '^EnvironmentFile=-' "$SERVICE_FILE"; then
   echo "[Deploy] Removing EnvironmentFile from $SERVICE_FILE"
   sudo sed -i '/^EnvironmentFile=-/d' "$SERVICE_FILE"
   sudo systemctl daemon-reload
@@ -118,7 +118,7 @@ for i in $(seq 1 24); do
   fi
   sleep 5
 done
-if [ "$HEALTH_OK" != "yes" ]; then
+if [[ "$HEALTH_OK" != "yes" ]]; then
   echo "::error::Local health check failed after 115s on http://127.0.0.1:${PORT}/health"
   sudo journalctl -u "$SERVICE_NAME" -n 80 --no-pager
   exit 1

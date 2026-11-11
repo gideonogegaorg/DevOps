@@ -3,19 +3,19 @@
 # Usage: sudo bash archive-www-path.sh <path>
 set -euo pipefail
 
-if [ "$#" -ne 1 ]; then
+if [[ "$#" -ne 1 ]]; then
   echo "Usage: sudo $0 <path>" >&2
   exit 1
 fi
 
 SRC="$1"
 
-if [ "$EUID" -ne 0 ]; then
+if [[ "$EUID" -ne 0 ]]; then
   echo "Error: run as root (sudo)" >&2
   exit 1
 fi
 
-if [ ! -d "$SRC" ]; then
+if [[ ! -d "$SRC" ]]; then
   echo "Warning: $SRC not found; skipping"
   exit 0
 fi

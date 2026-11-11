@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
   echo "Run as root: sudo bash $0"
   exit 1
 fi
@@ -17,7 +17,7 @@ if ! command -v redis-server >/dev/null 2>&1; then
 fi
 
 CONF=/etc/redis/redis.conf
-if [ ! -f "$CONF" ]; then
+if [[ ! -f "$CONF" ]]; then
   echo "[Redis] Expected configuration file not found: $CONF"
   exit 1
 fi
@@ -45,13 +45,13 @@ set_directive dir "/var/lib/redis"
 after_hash="$(sha256sum "$CONF" | awk '{print $1}')"
 
 systemctl enable redis-server
-if [ "$before_hash" != "$after_hash" ] || ! systemctl is-active --quiet redis-server; then
+if [[ "$before_hash" != "$after_hash" ]] || ! systemctl is-active --quiet redis-server; then
   echo "[Redis] Starting/restarting redis-server..."
   systemctl restart redis-server
 fi
 
 for attempt in 1 2 3 4 5; do
-  if [ "$(redis-cli -h 127.0.0.1 ping 2>/dev/null || true)" = "PONG" ]; then
+  if [[ "$(redis-cli -h 127.0.0.1 ping 2>/dev/null || true)" = "PONG" ]]; then
     echo "[Redis] Shared Redis is healthy on 127.0.0.1:6379."
     exit 0
   fi

@@ -3,8 +3,8 @@
 # Usage: sudo bash install-postgres-backup.sh [path-to-devops-repo-root]
 set -euo pipefail
 
-if [ "$EUID" -ne 0 ]; then
-  echo "Error: run as root (sudo)"
+if [[ "$EUID" -ne 0 ]]; then
+  echo "Error: run as root (sudo)" >&2
   exit 1
 fi
 
@@ -28,7 +28,7 @@ install_aws_cli() {
     apt-get install -y unzip
   fi
   TMP=$(mktemp -d)
-  curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${AWS_ARCH}.zip" -o "$TMP/awscliv2.zip"
+  curl -fsSL --proto "=https" --tlsv1.2 "https://awscli.amazonaws.com/awscli-exe-linux-${AWS_ARCH}.zip" -o "$TMP/awscliv2.zip"
   unzip -q "$TMP/awscliv2.zip" -d "$TMP"
   "$TMP/aws/install" --update
   rm -rf "$TMP"
@@ -46,7 +46,7 @@ install_aws_cli
 
 echo "[install] Verifying instance profile..."
 if ! aws sts get-caller-identity; then
-  echo "ERROR: AWS credentials not available. Attach IAM policy PostgresBackupS3Policy to EC2 role."
+  echo "ERROR: AWS credentials not available. Attach IAM policy PostgresBackupS3Policy to EC2 role." >&2
   exit 1
 fi
 

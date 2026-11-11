@@ -5,7 +5,7 @@
 #   sudo DLL_NAME=GMO.FamilyTree.Web.dll ./configure-subdomain.sh familytree.goom.life 5002 familytree goom.life true
 set -euo pipefail
 
-if [ "$#" -lt 3 ] || [ "$#" -gt 5 ]; then
+if [[ "$#" -lt 3 ]] || [[ "$#" -gt 5 ]]; then
   echo "Usage: sudo DLL_NAME=App.Web.dll $0 <hostname> <port> <service_name> [cert_domain] [is_production]" >&2
   exit 1
 fi
@@ -18,19 +18,19 @@ IS_PRODUCTION="${5:-false}"
 WEB_ROOT="/var/www/$HOSTNAME"
 DLL_NAME="${DLL_NAME:-}"
 
-if [ "$EUID" -ne 0 ]; then
+if [[ "$EUID" -ne 0 ]]; then
   echo "Error: run as root (sudo)" >&2
   exit 1
 fi
 
-if [ -z "$DLL_NAME" ]; then
+if [[ -z "$DLL_NAME" ]]; then
   echo "Error: set DLL_NAME env var (e.g. GMO.FamilyTree.Web.dll)" >&2
   exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNTIME_SCRIPT="$SCRIPT_DIR/../../dotnet/ec2/install-aspnetcore-runtime.sh"
-if [ -f "$RUNTIME_SCRIPT" ]; then
+if [[ -f "$RUNTIME_SCRIPT" ]]; then
   bash "$RUNTIME_SCRIPT"
 else
   echo "Warning: install-aspnetcore-runtime.sh not found at $RUNTIME_SCRIPT; skipping."
