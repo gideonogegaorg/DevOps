@@ -51,6 +51,15 @@ on:
         required: false
         type: string
         default: "**/tst/**"
+      sonar_test_exclusions:
+        required: false
+        type: string
+        default: ""
+      # Newline-separated key=value lines, each passed to the scanner begin step as /d:key=value.
+      sonar_extra_properties:
+        required: false
+        type: string
+        default: ""
       coverlet_runsettings:
         required: false
         type: string
@@ -232,6 +241,8 @@ jobs:
           SONAR_ORGANIZATION: ${{ github.repository_owner }}
           SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key != '' && inputs.sonar_project_key || format('{0}_{1}', github.repository_owner, github.event.repository.name) }}
           SONAR_PROJECT_NAME: ${{ github.event.repository.name }}
+          SONAR_TEST_EXCLUSIONS: ${{ inputs.sonar_test_exclusions }}
+          SONAR_EXTRA_PROPERTIES: ${{ inputs.sonar_extra_properties }}
         run: |
           EXCLUSIONS="${{ inputs.sonar_exclusions }}"
           COVERAGE_EXCLUSIONS="${{ inputs.sonar_coverage_exclusions }}"
@@ -321,6 +332,21 @@ jobs:
             "/d:sonar.coverage.exclusions=$COVERAGE_EXCLUSIONS"
             "/d:sonar.cpd.exclusions=${{ inputs.sonar_cpd_exclusions }}"
           )
+          if [[ -n "$SONAR_TEST_EXCLUSIONS" ]]; then
+            begin_args+=("/d:sonar.test.exclusions=$SONAR_TEST_EXCLUSIONS")
+          fi
+          while IFS= read -r prop || [[ -n "$prop" ]]; do
+            prop="${prop#"${prop%%[![:space:]]*}"}"
+            prop="${prop%"${prop##*[![:space:]]}"}"
+            if [[ -z "$prop" || "$prop" == \#* ]]; then
+              continue
+            fi
+            if [[ "$prop" != [!=]*=* ]]; then
+              echo "::error::sonar_extra_properties line '${prop}' is not in key=value form." >&2
+              exit 1
+            fi
+            begin_args+=("/d:${prop}")
+          done <<< "$SONAR_EXTRA_PROPERTIES"
           if [ "$SONAR_EVENT_NAME" = "pull_request" ]; then
             begin_args+=(
               "/d:sonar.pullrequest.key=$SONAR_PR_KEY"
@@ -497,6 +523,8 @@ jobs:
           SONAR_ORGANIZATION: ${{ github.repository_owner }}
           SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key != '' && inputs.sonar_project_key || format('{0}_{1}', github.repository_owner, github.event.repository.name) }}
           SONAR_PROJECT_NAME: ${{ github.event.repository.name }}
+          SONAR_TEST_EXCLUSIONS: ${{ inputs.sonar_test_exclusions }}
+          SONAR_EXTRA_PROPERTIES: ${{ inputs.sonar_extra_properties }}
         run: |
           EXCLUSIONS="${{ inputs.sonar_exclusions }}"
           COVERAGE_EXCLUSIONS="${{ inputs.sonar_coverage_exclusions }}"
@@ -586,6 +614,21 @@ jobs:
             "/d:sonar.coverage.exclusions=$COVERAGE_EXCLUSIONS"
             "/d:sonar.cpd.exclusions=${{ inputs.sonar_cpd_exclusions }}"
           )
+          if [[ -n "$SONAR_TEST_EXCLUSIONS" ]]; then
+            begin_args+=("/d:sonar.test.exclusions=$SONAR_TEST_EXCLUSIONS")
+          fi
+          while IFS= read -r prop || [[ -n "$prop" ]]; do
+            prop="${prop#"${prop%%[![:space:]]*}"}"
+            prop="${prop%"${prop##*[![:space:]]}"}"
+            if [[ -z "$prop" || "$prop" == \#* ]]; then
+              continue
+            fi
+            if [[ "$prop" != [!=]*=* ]]; then
+              echo "::error::sonar_extra_properties line '${prop}' is not in key=value form." >&2
+              exit 1
+            fi
+            begin_args+=("/d:${prop}")
+          done <<< "$SONAR_EXTRA_PROPERTIES"
           if [ "$SONAR_EVENT_NAME" = "pull_request" ]; then
             begin_args+=(
               "/d:sonar.pullrequest.key=$SONAR_PR_KEY"

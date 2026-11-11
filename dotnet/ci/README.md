@@ -27,6 +27,8 @@ Callers do not need a separate NuGet audit job; this one covers direct and trans
 | `pre_build_script` | `""` | Repo script run with `bash` after setup-dotnet, before build (toolchain setup such as `mono-complete` for net48) |
 | `coverlet_runsettings` | `coverlet.runsettings` | Runsettings passed to `dotnet test --settings`; omitted when the file does not exist |
 | `test_framework` | `""` | When set, `dotnet test --framework <value>`; use for multi-targeted solutions since coverlet collects no coverage under Mono for net48 |
+| `sonar_test_exclusions` | `""` | When set, passed as `sonar.test.exclusions`: test files matching these comma-separated globs are not analyzed |
+| `sonar_extra_properties` | `""` | Newline-separated `key=value` lines, each passed to the scanner begin step as `/d:key=value`. Blank lines and lines starting with `#` are skipped; any other line without `=` fails the step |
 
 When `postgres_enabled` is `true`, the job also starts RabbitMQ on port 5672 for integration tests that need a broker.
 
@@ -41,6 +43,19 @@ with:
 ```
 
 With `test_framework` set and `--no-build`, every test project in the solution must target that TFM.
+
+`sonar_extra_properties` carries analysis settings that have no dedicated input, such as issue-ignore rules. Each line is passed to the scanner as one literal argument, never evaluated by the shell. To keep test code out of analysis and ignore rule `csharpsquid:S8969` on library sources:
+
+```yaml
+with:
+  sonar_test_exclusions: "**/tst/**"
+  sonar_extra_properties: |
+    sonar.issue.ignore.multicriteria=e1
+    sonar.issue.ignore.multicriteria.e1.ruleKey=csharpsquid:S8969
+    sonar.issue.ignore.multicriteria.e1.resourceKey=src/**/*.cs
+```
+
+Properties set here and in the SonarCloud UI do not merge for multi-value keys: `sonar.issue.ignore.multicriteria` passed by the scanner replaces the project's UI-defined ignore list for that analysis. List every ignore rule the project needs, numbered `e1,e2,...`.
 
 ## dotnet-codeql.yml
 
