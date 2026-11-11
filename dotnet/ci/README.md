@@ -21,8 +21,23 @@ Secrets `GH_USER` / `GH_CLASSIC_PAT` are optional when `use_gmo_feed` is `false`
 | `postgres_enabled` | `true` | When `false`, run build without Postgres service |
 | `playwright_install_glob` | `""` | Path to `playwright.ps1` after build |
 | `setup_paths_filter` | `""` | Path filter for `setup_changed` output |
+| `pre_build_script` | `""` | Repo script run with `bash` after setup-dotnet, before build (toolchain setup such as `mono-complete` for net48) |
+| `coverlet_runsettings` | `coverlet.runsettings` | Runsettings passed to `dotnet test --settings`; omitted when the file does not exist |
+| `test_framework` | `""` | When set, `dotnet test --framework <value>`; use for multi-targeted solutions since coverlet collects no coverage under Mono for net48 |
 
 When `postgres_enabled` is `true`, the job also starts RabbitMQ on port 5672 for integration tests that need a broker.
+
+`generate_appsettings_script` is for app configuration; put toolchain setup in `pre_build_script`. A solution that multi-targets net48 builds on the Linux runner only with Mono installed:
+
+```yaml
+with:
+  solution_file: src/MyLib.sln
+  postgres_enabled: false
+  pre_build_script: .github/scripts/install-mono.sh
+  test_framework: net10.0
+```
+
+With `test_framework` set and `--no-build`, every test project in the solution must target that TFM.
 
 ## dotnet-codeql.yml
 
@@ -31,6 +46,7 @@ When `postgres_enabled` is `true`, the job also starts RabbitMQ on port 5672 for
 | `solution_file` | required | Solution to build for analysis |
 | `use_gmo_feed` | `true` | Skip GMO NuGet auth when `false` |
 | `generate_appsettings_script` | `""` | Optional pre-build script |
+| `pre_build_script` | `""` | Repo script run with `bash` after setup-dotnet, before build (toolchain setup such as `mono-complete` for net48) |
 | `upload_results` | `true` | Set `false` on private repos without GitHub Code Security |
 
 ## security-trivy.yml

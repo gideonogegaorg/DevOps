@@ -14,6 +14,11 @@ on:
         required: false
         type: string
         default: ""
+      # Repo script run with bash after setup-dotnet, before build (e.g. install mono-complete for net48).
+      pre_build_script:
+        required: false
+        type: string
+        default: ""
       use_gmo_feed:
         required: false
         type: string
@@ -67,6 +72,10 @@ jobs:
       - name: Generate appsettings.json
         if: inputs.generate_appsettings_script != ''
         run: bash "${{ inputs.generate_appsettings_script }}"
+
+      - name: Run pre-build script
+        if: inputs.pre_build_script != ''
+        run: bash "${{ inputs.pre_build_script }}"
 
       - name: Configure NuGet auth for GMO feed
         if: inputs.use_gmo_feed == 'true'
