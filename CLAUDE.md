@@ -15,7 +15,7 @@ Tech-stack agnostic items live at the root (`aws/` for workstation-side AWS prov
 - **The real implementation is `.github/workflows/*.yml`.** The files in `dotnet/ci/*.yml` are short reference stubs (input lists), not executed. `dotnet/ci/README.md` documents caller-facing inputs; update it when inputs or defaults change.
 - **`dotnet-sonarqube-scan.yml` has two near-identical jobs**, `build` (with Postgres and RabbitMQ service containers) and `build_no_postgres`, selected by `postgres_enabled`. A change to Sonar, test or coverage logic must be made in both.
 - SonarCloud branch handling is shared by `dotnet-sonarqube-scan.yml` and `sonarcloud-provision-project.yml` (a manual `workflow_dispatch` that provisions any org repo). The Sonar main branch defaults to `dev`; the scan renames the SonarCloud main branch to match it via the `project_branches/rename` API, and the quality gate is waited on only for pushes to that branch. Keep both workflows consistent.
-- Third-party actions are pinned to full commit SHAs with a `# vN` comment. Keep that form when adding or bumping actions.
+- Third-party actions are pinned to full commit SHAs with a `# vN` comment. Keep that form when adding or bumping actions; Dependabot (`.github/dependabot.yml`) bumps them weekly.
 - **GitHub masks the literal string `true` in inline SSH scripts.** Callers pass `yes`/`no` for flags such as `setup_changed` and `require_postgres`, and `dotnet/ec2/deploy-to-ec2.sh` must never contain the word. Prefer moving remote logic into a script that is SCP'd and run (`remote_deploy_script`) over inline heredocs.
 - Check names appear as `{caller job} / {callee job}`; CodeQL and Trivy callers use job ids `CodeQL` / `Trivy`. Renaming a callee job breaks required-check rulesets in every app repo.
 
@@ -27,6 +27,7 @@ Tech-stack agnostic items live at the root (`aws/` for workstation-side AWS prov
 
 ## EC2 host scripts
 
+- All files are LF with no BOM, enforced by `.gitattributes` and `.editorconfig`. CRLF or a BOM breaks shebangs, `set -o pipefail` and the cron file on the host.
 - Scripts run as `sudo bash <script>` on Ubuntu and are expected to be idempotent (safe on every deploy), e.g. `ec2/redis/ensure-redis.sh`.
 - `deploy-to-ec2.sh` resolves helper scripts from the staging dir in order: `DevOps/...`, then repo-root-relative, then the app's `scripts/`. Moving a script here changes those paths.
 - Shared Redis: one loopback-only instance at `127.0.0.1:6379`; apps isolate by a service-name key prefix (`music:`, `music-dev:`), not DB numbers. Never expose 6379. See `ec2/redis/README.md`.
