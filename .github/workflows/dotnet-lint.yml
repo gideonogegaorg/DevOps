@@ -14,6 +14,21 @@ on:
         required: false
         type: string
         default: ""
+      appsettings_template:
+        required: false
+        type: string
+        default: ""
+        description: "appsettings template (path ending in .template). When set, DevOps dotnet/ci/generate-appsettings.sh renders it next to itself instead of running generate_appsettings_script."
+      appsettings_defaults:
+        required: false
+        type: string
+        default: ""
+        description: "Optional KEY=VALUE defaults file passed to the generic generator with appsettings_template."
+      devops_ref:
+        required: false
+        type: string
+        default: "main"
+        description: "Ref of gideonogegaorg/DevOps checked out when appsettings_template is set."
       verify_appsettings_not_tracked:
         required: false
         type: string
@@ -44,9 +59,29 @@ jobs:
         uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: ${{ inputs.dotnet_version }}
+      - name: Checkout DevOps scripts
+        if: inputs.appsettings_template != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: gideonogegaorg/DevOps
+          ref: ${{ inputs.devops_ref }}
+          path: DevOps
+          persist-credentials: false
       - name: Generate appsettings.json
-        if: inputs.generate_appsettings_script != ''
+        if: inputs.generate_appsettings_script != '' && inputs.appsettings_template == ''
         run: bash "${{ inputs.generate_appsettings_script }}"
+      - name: Generate appsettings.json from template
+        if: inputs.appsettings_template != ''
+        env:
+          APPSETTINGS_TEMPLATE: ${{ inputs.appsettings_template }}
+          APPSETTINGS_DEFAULTS: ${{ inputs.appsettings_defaults }}
+        run: |
+          if [[ "$APPSETTINGS_TEMPLATE" != *.template ]]; then
+            echo "::error::appsettings_template must end in .template."
+            exit 1
+          fi
+          bash DevOps/dotnet/ci/generate-appsettings.sh "$APPSETTINGS_TEMPLATE" "${APPSETTINGS_TEMPLATE%.template}" ${APPSETTINGS_DEFAULTS:+"$APPSETTINGS_DEFAULTS"}
+          rm -rf DevOps
       - name: Verify appsettings.json is not tracked
         if: inputs.verify_appsettings_not_tracked == 'true'
         run: |

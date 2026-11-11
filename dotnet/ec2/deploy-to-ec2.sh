@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Remote deploy steps for EC2. Invoked from GitHub Actions over SSH.
-# Keep bash-only syntax here; do not use the literal word "true" (GitHub masks it in inline scripts).
+# Keep bash-only syntax here, and never write the boolean literal that means yes:
+# GitHub masks that word in inline scripts because a secret commonly holds it.
+# HEALTH_PATH (unset by default): when non-empty, a local path that must answer HTTP 200 after /health.
 set -euo pipefail
 
 DEPLOY_PATH="$1"
@@ -24,10 +26,12 @@ resolve_script() {
 }
 
 RUNTIME_SCRIPT=$(resolve_script \
+  ${RUNTIME_SCRIPT_PATH:+"$STAGING/$RUNTIME_SCRIPT_PATH"} \
   "$STAGING/DevOps/dotnet/ec2/install-aspnetcore-runtime.sh" \
   "$STAGING/dotnet/ec2/install-aspnetcore-runtime.sh" \
   "$STAGING/scripts/install-aspnetcore-runtime.sh")
 CONFIGURE_SCRIPT=$(resolve_script \
+  ${CONFIGURE_SCRIPT_PATH:+"$STAGING/$CONFIGURE_SCRIPT_PATH"} \
   "$STAGING/DevOps/ec2/nginx/configure-subdomain.sh" \
   "$STAGING/ec2/nginx/configure-subdomain.sh" \
   "$STAGING/scripts/configure-subdomain.sh")
@@ -42,7 +46,14 @@ echo "[Deploy] Ensuring ASP.NET Core Runtime 10..."
 sudo bash "$RUNTIME_SCRIPT"
 
 echo "[Deploy] Ensuring directory..."
-sudo mkdir -p "$DEPLOY_PATH/site" "$DEPLOY_PATH/logs" "$DEPLOY_PATH/uploads"
+sudo mkdir -p "$DEPLOY_PATH/site" "$DEPLOY_PATH/logs"
+IFS=',' read -ra extra_dirs <<< "${EXTRA_DEPLOY_DIRS-uploads}"
+for d in "${extra_dirs[@]}"; do
+  d="${d// /}"
+  if [[ -n "$d" ]] && [[ "$d" != "site" ]] && [[ "$d" != "logs" ]] && [[ "$d" != *..* ]]; then
+    sudo mkdir -p "$DEPLOY_PATH/$d"
+  fi
+done
 if ! sudo chown -R ubuntu:www-data "$DEPLOY_PATH"; then
   echo "::error::Failed to set ownership on $DEPLOY_PATH"
   ls -la "$DEPLOY_PATH" || :
@@ -66,17 +77,19 @@ else
 fi
 
 if [[ "$NEEDS_SETUP" = "yes" ]]; then
-  echo "[Deploy] Running configure-subdomain.sh..."
+  echo "[Deploy] Running $(basename "$CONFIGURE_SCRIPT")..."
   if [[ -z "${DLL_NAME:-}" ]]; then
     deployed_path="$(find "$STAGING/site" -maxdepth 1 -type f -name '*.Web.dll' 2>/dev/null | head -n1)"
     if [[ -n "$deployed_path" ]]; then
-      export DLL_NAME="$(basename "$deployed_path")"
+      DLL_NAME="$(basename "$deployed_path")"
+      export DLL_NAME
     fi
   fi
   if [[ -z "${DLL_NAME:-}" ]]; then
     echo "::error::DLL_NAME not set and no *.Web.dll found in staging site"
     exit 1
   fi
+  export DEPLOY_PATH
   sudo -E bash "$CONFIGURE_SCRIPT" "$FULL_HOSTNAME" "$PORT" "$SERVICE_NAME" "$CERT_DOMAIN" "$PRODUCTION_MODE"
 fi
 
@@ -88,6 +101,9 @@ if [[ ! -d "$STAGING/site" ]]; then
 fi
 cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
 sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
+if [[ "${RESTRICT_APPSETTINGS:-no}" == "yes" ]] && [[ -f "$DEPLOY_PATH/site/appsettings.json" ]]; then
+  chmod 600 "$DEPLOY_PATH/site/appsettings.json"
+fi
 
 # appsettings.json from CI is the single config source; legacy .env overrides caused stale DB names.
 if [[ -f "$DEPLOY_PATH/.env" ]]; then
@@ -122,6 +138,29 @@ if [[ "$HEALTH_OK" != "yes" ]]; then
   echo "::error::Local health check failed after 115s on http://127.0.0.1:${PORT}/health"
   sudo journalctl -u "$SERVICE_NAME" -n 80 --no-pager
   exit 1
+fi
+
+if [[ -n "${HEALTH_PATH:-}" ]]; then
+  if [[ "$HEALTH_PATH" != /* ]]; then
+    echo "::error::HEALTH_PATH must start with /."
+    exit 1
+  fi
+  echo "[Deploy] Waiting for local HTTP 200 from ${HEALTH_PATH} on port $PORT..."
+  HOME_OK=no
+  for i in $(seq 1 12); do
+    HTTP=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}${HEALTH_PATH}" || echo "000")
+    if [[ "$HTTP" == "200" ]]; then
+      echo "[Deploy] Local ${HEALTH_PATH} check passed (+$(( (i - 1) * 5 ))s)."
+      HOME_OK=yes
+      break
+    fi
+    sleep 5
+  done
+  if [[ "$HOME_OK" != "yes" ]]; then
+    echo "::error::Local check failed after 55s (expected HTTP 200 from http://127.0.0.1:${PORT}${HEALTH_PATH}, last ${HTTP})."
+    sudo journalctl -u "$SERVICE_NAME" -n 80 --no-pager
+    exit 1
+  fi
 fi
 
 echo "[Deploy] Service healthy; public health check runs from GitHub Actions."
