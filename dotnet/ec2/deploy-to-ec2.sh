@@ -4,6 +4,7 @@
 # GitHub masks that word in inline scripts because a secret commonly holds it.
 # HEALTH_PATH (unset by default): when non-empty, a local path that must answer HTTP 200 after /health.
 # CLEAN_SITE (no by default): yes empties site/ before the copy so DLLs of removed packages do not linger.
+# CLEAN_SITE_KEEP: comma-separated site-relative paths the app writes at runtime, kept through the clean.
 set -euo pipefail
 
 DEPLOY_PATH="$1"
@@ -105,11 +106,15 @@ if [[ ! -d "$STAGING/site" ]]; then
   ls -la "$STAGING" || :
   exit 1
 fi
-if [[ "${CLEAN_SITE:-no}" == "yes" ]]; then
-  echo "[Deploy] Emptying $DEPLOY_PATH/site..."
-  find "$DEPLOY_PATH/site" -mindepth 1 -delete
+REPLACE_SITE_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/replace-site.sh"
+if [[ -f "$REPLACE_SITE_SCRIPT" ]]; then
+  bash "$REPLACE_SITE_SCRIPT" "$STAGING/site" "$DEPLOY_PATH/site" "${CLEAN_SITE:-no}" "${CLEAN_SITE_KEEP:-}"
+elif [[ "${CLEAN_SITE:-no}" == "yes" ]]; then
+  echo "::error::CLEAN_SITE=yes needs replace-site.sh staged next to deploy-to-ec2.sh"
+  exit 1
+else
+  cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
 fi
-cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
 sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
 if [[ "${RESTRICT_APPSETTINGS:-no}" == "yes" ]] && [[ -f "$DEPLOY_PATH/site/appsettings.json" ]]; then
   chmod 600 "$DEPLOY_PATH/site/appsettings.json"
