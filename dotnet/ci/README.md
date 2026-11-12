@@ -104,13 +104,14 @@ Filesystem + secret scan. Job name is `Trivy`. SARIF upload is best-effort (`con
 | `health_path` | `/` | Exported as `HEALTH_PATH` to `remote_deploy_script`; `deploy-to-ec2.sh` then expects HTTP 200 from it on the local port after `/health`. Empty skips the check |
 | `dll_name` | `""` | Exported as `DLL_NAME` to `remote_deploy_script`; `deploy-to-ec2.sh` needs it when the app dll is not `*.Web.dll` |
 | `restrict_appsettings` | `no` | `yes` sets `site/appsettings.json` to mode 600; the service must run as `ubuntu` |
+| `clean_site` | `no` | `yes` empties `site/` on the host before the copy. Without it the copy overlays the old build, so DLLs of removed packages linger, and Serilog.Settings.Configuration crashes at startup on a stale `*serilog*.dll` missing from `deps.json`. Keep `no` while the app writes runtime files under `site/` (Family falls back to `wwwroot/uploads` when `Paths:Uploads` is empty) |
 | `use_gmo_feed` | `false` | `true` authenticates the `GMO` source from the caller's `nuget.config` with `GH_USER` / `GH_CLASSIC_PAT` before publish |
 
 Secrets: `SSH_PRIVATE_KEY`, `AWS_*`, `SEC_GROUP_ID`, and `REMOTE_HOST` unless `ssh_host` is set (repo or org). **`PG_USER` / `PG_PASS`**: organization secrets only (`gideonogegaorg`); callers use `secrets: inherit`.
 
 `appsettings_secret_names` reads the job's `secrets` context. With `secrets: inherit` that context holds every secret the caller can see (org, repo, and the callee job's `github.ref_name` environment), not only the ones declared under `workflow_call.secrets`, so app-specific secrets need no declaration here. Without `secrets: inherit` only declared secrets are visible.
 
-With `remote_deploy_script: DevOps/dotnet/ec2/deploy-to-ec2.sh`, the workflow exports `CONFIGURE_SCRIPT_PATH`, `RUNTIME_SCRIPT_PATH` (the `configure_service_script` / `install_runtime_script` inputs), `EXTRA_DEPLOY_DIRS`, `RESTRICT_APPSETTINGS`, `HEALTH_PATH` and `DLL_NAME`; the script prefers the two script paths over its built-in candidates. Point `install_runtime_script` at `DevOps/dotnet/ec2/install-aspnetcore-runtime.sh` when the app has no copy:
+With `remote_deploy_script: DevOps/dotnet/ec2/deploy-to-ec2.sh`, the workflow exports `CONFIGURE_SCRIPT_PATH`, `RUNTIME_SCRIPT_PATH` (the `configure_service_script` / `install_runtime_script` inputs), `EXTRA_DEPLOY_DIRS`, `RESTRICT_APPSETTINGS`, `CLEAN_SITE`, `HEALTH_PATH` and `DLL_NAME`; the script prefers the two script paths over its built-in candidates. Point `install_runtime_script` at `DevOps/dotnet/ec2/install-aspnetcore-runtime.sh` when the app has no copy:
 
 ```yaml
 with:

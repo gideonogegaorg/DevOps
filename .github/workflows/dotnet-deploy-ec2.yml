@@ -121,6 +121,11 @@ on:
         type: string
         default: "no"
         description: "yes/no. When yes, chmod 600 site/appsettings.json on the host (service must run as ubuntu)."
+      clean_site:
+        required: false
+        type: string
+        default: "no"
+        description: "yes/no. When yes, empty site/ on the host before copying the new build, so DLLs of removed packages do not linger (a stale *serilog*.dll crashes Serilog.Settings.Configuration at startup). Leave no when the app writes runtime files under site/ (for example wwwroot/uploads)."
       use_gmo_feed:
         required: false
         type: string
@@ -199,6 +204,7 @@ jobs:
       SETUP_CHANGED: ${{ (inputs.setup_changed == 'true' || inputs.setup_changed == 'yes') && 'yes' || 'no' }}
       ENSURE_REDIS: ${{ (inputs.ensure_redis == 'true' || inputs.ensure_redis == 'yes') && 'yes' || 'no' }}
       RESTRICT_APPSETTINGS: ${{ (inputs.restrict_appsettings == 'true' || inputs.restrict_appsettings == 'yes') && 'yes' || 'no' }}
+      CLEAN_SITE: ${{ (inputs.clean_site == 'true' || inputs.clean_site == 'yes') && 'yes' || 'no' }}
       PORT: ${{ inputs.port }}
       SERVICE_NAME: ${{ inputs.service_name }}
       CERT_DOMAIN: ${{ inputs.cert_domain }}
@@ -495,6 +501,7 @@ jobs:
             export RUNTIME_SCRIPT_PATH='${{ inputs.install_runtime_script }}'
             export EXTRA_DEPLOY_DIRS='${{ inputs.extra_deploy_dirs }}'
             export RESTRICT_APPSETTINGS='${{ env.RESTRICT_APPSETTINGS }}'
+            export CLEAN_SITE='${{ env.CLEAN_SITE }}'
             export HEALTH_PATH='${{ inputs.health_path }}'
             if [ -n '${{ inputs.dll_name }}' ]; then
               export DLL_NAME='${{ inputs.dll_name }}'
@@ -528,6 +535,7 @@ jobs:
             DEPLOY_ENV_LINES='${{ inputs.deploy_env_lines }}'
             EXTRA_DEPLOY_DIRS='${{ inputs.extra_deploy_dirs }}'
             RESTRICT_APPSETTINGS='${{ env.RESTRICT_APPSETTINGS }}'
+            CLEAN_SITE='${{ env.CLEAN_SITE }}'
             STAGING='${{ env.STAGING }}'
             CONFIG_SCRIPT="${{ inputs.configure_service_script }}"
             RUNTIME_SCRIPT="${{ inputs.install_runtime_script }}"
@@ -576,6 +584,10 @@ jobs:
               echo "::error::Missing staging site dir: $STAGING/site"
               ls -la "$STAGING" || :
               exit 1
+            fi
+            if [ "$CLEAN_SITE" = "yes" ]; then
+              echo "[Deploy] Emptying $DEPLOY_PATH/site..."
+              find "$DEPLOY_PATH/site" -mindepth 1 -delete
             fi
             cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
             sudo chown -R ubuntu:www-data "$DEPLOY_PATH"

@@ -3,6 +3,7 @@
 # Keep bash-only syntax here, and never write the boolean literal that means yes:
 # GitHub masks that word in inline scripts because a secret commonly holds it.
 # HEALTH_PATH (unset by default): when non-empty, a local path that must answer HTTP 200 after /health.
+# CLEAN_SITE (no by default): yes empties site/ before the copy so DLLs of removed packages do not linger.
 set -euo pipefail
 
 DEPLOY_PATH="$1"
@@ -12,6 +13,11 @@ SERVICE_NAME="$4"
 CERT_DOMAIN="$5"
 PRODUCTION_MODE="$6"
 STAGING="$7"
+
+if [[ "$DEPLOY_PATH" != /var/www/?* ]] || [[ "$DEPLOY_PATH" == *..* ]]; then
+  echo "::error::DEPLOY_PATH must be under /var/www/: $DEPLOY_PATH"
+  exit 1
+fi
 
 trap 'rm -rf "$STAGING"' EXIT
 
@@ -98,6 +104,10 @@ if [[ ! -d "$STAGING/site" ]]; then
   echo "::error::Missing staging site dir: $STAGING/site"
   ls -la "$STAGING" || :
   exit 1
+fi
+if [[ "${CLEAN_SITE:-no}" == "yes" ]]; then
+  echo "[Deploy] Emptying $DEPLOY_PATH/site..."
+  find "$DEPLOY_PATH/site" -mindepth 1 -delete
 fi
 cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
 sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
