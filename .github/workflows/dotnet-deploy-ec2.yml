@@ -125,7 +125,12 @@ on:
         required: false
         type: string
         default: "no"
-        description: "yes/no. When yes, empty site/ on the host before copying the new build, so DLLs of removed packages do not linger (a stale *serilog*.dll crashes Serilog.Settings.Configuration at startup). Leave no when the app writes runtime files under site/ (for example wwwroot/uploads)."
+        description: "yes/no. When yes, empty site/ on the host before copying the new build, so DLLs of removed packages do not linger (a stale *serilog*.dll crashes Serilog.Settings.Configuration at startup). Paths the app writes at runtime under site/ must be listed in clean_site_keep or they are deleted."
+      clean_site_keep:
+        required: false
+        type: string
+        default: ""
+        description: "Comma-separated site-relative paths (for example data,wwwroot/uploads) moved aside before clean_site empties site/ and put back after the copy, replacing any staged copy."
       use_gmo_feed:
         required: false
         type: string
@@ -205,6 +210,7 @@ jobs:
       ENSURE_REDIS: ${{ (inputs.ensure_redis == 'true' || inputs.ensure_redis == 'yes') && 'yes' || 'no' }}
       RESTRICT_APPSETTINGS: ${{ (inputs.restrict_appsettings == 'true' || inputs.restrict_appsettings == 'yes') && 'yes' || 'no' }}
       CLEAN_SITE: ${{ (inputs.clean_site == 'true' || inputs.clean_site == 'yes') && 'yes' || 'no' }}
+      CLEAN_SITE_KEEP: ${{ inputs.clean_site_keep }}
       PORT: ${{ inputs.port }}
       SERVICE_NAME: ${{ inputs.service_name }}
       CERT_DOMAIN: ${{ inputs.cert_domain }}
@@ -458,6 +464,10 @@ jobs:
           source="site/*,${CONFIGURE_SERVICE_SCRIPT},${INSTALL_RUNTIME_SCRIPT}"
           if [ -n "$REMOTE_DEPLOY_SCRIPT" ]; then
             source="${source},${REMOTE_DEPLOY_SCRIPT}"
+            replace_site="$(dirname "$REMOTE_DEPLOY_SCRIPT")/replace-site.sh"
+            if [ -f "$replace_site" ]; then
+              source="${source},${replace_site}"
+            fi
           fi
           if [ "$ENSURE_REDIS" = "yes" ]; then
             source="${source},DevOps/ec2/redis/ensure-redis.sh"
@@ -502,6 +512,7 @@ jobs:
             export EXTRA_DEPLOY_DIRS='${{ inputs.extra_deploy_dirs }}'
             export RESTRICT_APPSETTINGS='${{ env.RESTRICT_APPSETTINGS }}'
             export CLEAN_SITE='${{ env.CLEAN_SITE }}'
+            export CLEAN_SITE_KEEP='${{ env.CLEAN_SITE_KEEP }}'
             export HEALTH_PATH='${{ inputs.health_path }}'
             if [ -n '${{ inputs.dll_name }}' ]; then
               export DLL_NAME='${{ inputs.dll_name }}'
@@ -536,6 +547,7 @@ jobs:
             EXTRA_DEPLOY_DIRS='${{ inputs.extra_deploy_dirs }}'
             RESTRICT_APPSETTINGS='${{ env.RESTRICT_APPSETTINGS }}'
             CLEAN_SITE='${{ env.CLEAN_SITE }}'
+            CLEAN_SITE_KEEP='${{ env.CLEAN_SITE_KEEP }}'
             STAGING='${{ env.STAGING }}'
             CONFIG_SCRIPT="${{ inputs.configure_service_script }}"
             RUNTIME_SCRIPT="${{ inputs.install_runtime_script }}"
@@ -585,11 +597,35 @@ jobs:
               ls -la "$STAGING" || :
               exit 1
             fi
+            KEEP_DIR=""
             if [ "$CLEAN_SITE" = "yes" ]; then
+              KEEP_DIR="$(mktemp -d "$DEPLOY_PATH/.site-keep.XXXXXX")"
+              IFS=',' read -ra keep_paths <<< "$CLEAN_SITE_KEEP"
+              for k in "${keep_paths[@]}"; do
+                k="${k// /}"
+                if [ -z "$k" ]; then continue; fi
+                case "$k" in /*|*..*) echo "::error::clean_site_keep entry must be site-relative without '..': $k"; exit 1 ;; esac
+                if [ -e "$DEPLOY_PATH/site/$k" ]; then
+                  echo "[Deploy] Keeping site/$k"
+                  mkdir -p "$KEEP_DIR/$(dirname "$k")"
+                  mv "$DEPLOY_PATH/site/$k" "$KEEP_DIR/$k"
+                fi
+              done
               echo "[Deploy] Emptying $DEPLOY_PATH/site..."
               find "$DEPLOY_PATH/site" -mindepth 1 -delete
             fi
             cp -r "$STAGING/site/." "$DEPLOY_PATH/site/"
+            if [ -n "$KEEP_DIR" ]; then
+              for k in "${keep_paths[@]}"; do
+                k="${k// /}"
+                if [ -n "$k" ] && [ -e "$KEEP_DIR/$k" ]; then
+                  rm -rf "${DEPLOY_PATH:?}/site/$k"
+                  mkdir -p "$DEPLOY_PATH/site/$(dirname "$k")"
+                  mv "$KEEP_DIR/$k" "$DEPLOY_PATH/site/$k"
+                fi
+              done
+              rm -rf "$KEEP_DIR"
+            fi
             sudo chown -R ubuntu:www-data "$DEPLOY_PATH"
             if [ "$RESTRICT_APPSETTINGS" = "yes" ] && [ -f "$DEPLOY_PATH/site/appsettings.json" ]; then
               chmod 600 "$DEPLOY_PATH/site/appsettings.json"
