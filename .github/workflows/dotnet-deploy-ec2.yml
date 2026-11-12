@@ -680,9 +680,11 @@ jobs:
             DEPLOY_EOF
 
       - name: Verify public site health
+        env:
+          HOME_PATH: ${{ inputs.health_path }}
         run: |
           HEALTH_URL="https://${FULL_HOSTNAME}/health"
-          HOME_URL="https://${FULL_HOSTNAME}/"
+          HOME_URL="https://${FULL_HOSTNAME}${HOME_PATH:-/}"
           echo "Polling $HEALTH_URL and $HOME_URL every 5s for up to 30s..."
           START=$(date +%s)
           while true; do
