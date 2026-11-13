@@ -66,3 +66,8 @@ inputs:
     default: ""
   health_path:
     default: "/"
+  support_contact:
+    default: ""
+
+outputs:
+  support_contact: {}

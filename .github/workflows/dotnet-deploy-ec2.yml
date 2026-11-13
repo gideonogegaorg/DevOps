@@ -110,7 +110,7 @@ on:
         required: false
         type: string
         default: "main"
-        description: "Ref of gideonogegaorg/DevOps checked out to ./DevOps when ensure_redis is yes or a script input starts with DevOps/."
+        description: "Ref of gideonogegaorg/DevOps checked out to ./DevOps (helper scripts, the appsettings generator, the support contact and scripts referenced as DevOps/...)."
       dll_name:
         required: false
         type: string
@@ -156,6 +156,15 @@ on:
         type: string
         default: "/"
         description: "Exported as HEALTH_PATH to remote_deploy_script; DevOps deploy-to-ec2.sh expects HTTP 200 from it locally after /health. Empty skips that check."
+      support_contact:
+        required: false
+        type: string
+        default: ""
+        description: "Overrides SUPPORT_CONTACT. Empty uses the SITE_PRIVACY_CONTACT variable when set, else support@<last two labels of full_hostname>."
+    outputs:
+      support_contact:
+        description: "The SUPPORT_CONTACT the deploy used (empty when none could be derived)."
+        value: ${{ jobs.deploy.outputs.support_contact }}
     secrets:
       DEPLOY_DOMAIN:
         required: false
@@ -199,6 +208,8 @@ jobs:
       group: deploy-${{ github.repository }}-${{ github.ref_name }}
       cancel-in-progress: false
     environment: ${{ github.ref_name }}
+    outputs:
+      support_contact: ${{ steps.support.outputs.support_contact }}
     env:
       DEPLOY_PATH: ${{ inputs.deploy_path }}
       FULL_HOSTNAME: ${{ inputs.full_hostname }}
@@ -237,7 +248,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Checkout DevOps scripts
-        if: inputs.ensure_redis == 'yes' || inputs.ensure_redis == 'true' || inputs.appsettings_template != '' || startsWith(inputs.remote_deploy_script, 'DevOps/') || startsWith(inputs.install_runtime_script, 'DevOps/') || startsWith(inputs.configure_service_script, 'DevOps/')
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: gideonogegaorg/DevOps
@@ -276,6 +286,23 @@ jobs:
             echo "::error::Set PG_USER and PG_PASS organization secrets (gideonogegaorg → Settings → Secrets → Actions). Do not duplicate on repo or environment."
             exit 1
           fi
+
+      - name: Resolve support contact
+        id: support
+        env:
+          SUPPORT_CONTACT_OVERRIDE: ${{ inputs.support_contact != '' && inputs.support_contact || vars.SITE_PRIVACY_CONTACT }}
+        run: |
+          set -uo pipefail
+          status=0
+          contact="$(bash DevOps/dotnet/ci/support-contact.sh "$FULL_HOSTNAME" "$SUPPORT_CONTACT_OVERRIDE")" || status=$?
+          if [[ "$status" -eq 3 ]]; then
+            contact=""
+          elif [[ "$status" -ne 0 ]]; then
+            exit "$status"
+          fi
+          echo "SUPPORT_CONTACT=$contact" >> "$GITHUB_ENV"
+          echo "support_contact=$contact" >> "$GITHUB_OUTPUT"
+          echo "Support contact: ${contact:-none}"
 
       - name: Generate appsettings.json for deploy
         if: inputs.generate_appsettings_script != '' || inputs.appsettings_template != ''
