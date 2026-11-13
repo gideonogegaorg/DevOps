@@ -1,0 +1,43 @@
+From: =?ISO-8859-1?Q?Ren=E9_Dupont?= <rene@example.org>
+To: support@goom.life
+Cc: other@example.org
+Reply-To: rene.replies@example.org
+Subject: Export broken
+Date: Wed, 11 Nov 2026 18:00:00 +0000
+Message-ID: <support-1@example.org>
+MIME-Version: 1.0
+Content-Type: multipart/mixed;
+ boundary="mixed_outer"
+
+This is a multi-part message in MIME format.
+
+--mixed_outer
+Content-Type: multipart/alternative; boundary="alt_inner"
+
+--alt_inner
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+Hello support,
+
+The export link https://example.org/export?id=42 fails.
+
+--alt_inner
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PGJvZHk+PHA+SGVsbG8gc3VwcG9ydCw8L3A+PHA+VGhlIGV4cG9ydCBsaW5rIDxhIGhy
+ZWY9Imh0dHBzOi8vZXhhbXBsZS5vcmcvZXhwb3J0P2lkPTQyIj5oZXJlPC9hPiBmYWlscy48L3A+
+PC9ib2R5PjwvaHRtbD4=
+
+--alt_inner--
+
+--mixed_outer
+Content-Type: application/pdf; name="report.pdf"
+Content-Disposition: attachment; filename="report.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQgZmFrZSBwZGYgYnl0ZXMgaHR0cHM6Ly9oaWRkZW4uZXhhbXBsZS9ub3QtYS1saW5r
+Cg==
+
+--mixed_outer--
