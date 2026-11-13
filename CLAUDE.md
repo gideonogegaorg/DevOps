@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-Shared infrastructure scripts and reusable GitHub Actions workflows for `gideonogegaorg` app repos. There is no build or test suite: the deliverables are bash scripts that run on an Ubuntu EC2 host or an operator workstation, and `workflow_call` workflows that app repos consume as `uses: gideonogegaorg/DevOps/.github/workflows/<name>.yml@main`. Anything merged to `main` goes live for every caller at once. Callers stay on `@main`; introduce a version tag only for a breaking change (removed or renamed inputs, renamed jobs, defaults that fail existing callers), so callers can move to it deliberately.
+Shared infrastructure scripts and reusable GitHub Actions workflows for `gideonogegaorg` app repos. There is no build or CI test suite: the deliverables are bash scripts (plus PowerShell for workstation-side AWS mail setup) that run on an Ubuntu EC2 host or an operator workstation, and `workflow_call` workflows that app repos consume as `uses: gideonogegaorg/DevOps/.github/workflows/<name>.yml@main`. Anything merged to `main` goes live for every caller at once. Callers stay on `@main`; introduce a version tag only for a breaking change (removed or renamed inputs, renamed jobs, defaults that fail existing callers), so callers can move to it deliberately.
 
 ## Layout rule
 
@@ -35,6 +35,19 @@ Tech-stack agnostic items live at the root (`aws/` for workstation-side AWS prov
 - Postgres backups: daily dump of every database to `s3://gideonogega-postgres-backups/ec2-ubuntu/{db}/{YYYY-MM-DD}.dump.gz`, installed by `ec2/postgres/install-postgres-backup.sh`.
 - Hostname and database renames follow `ec2/domain-migration.md` and `aws/route53/README.md`. Route 53 scripts accept `ROUTE53_ZONE_ID` when `ListHostedZones` is denied.
 
+## Inbound mail (SES)
+
+`support@` every Route 53 domain and `claude-test@goom.life` arrive through SES into bucket `goom-life-mail` under `<domain>/<local part>/`; support mail is also forwarded by Lambda `ses-inbound-forwarder`. Layout, adding an address, and reading mail (console or `aws/Get-SesMail.ps1`) are in [README.md](README.md#inbound-mail-ses). Traps:
+
+- `aws/ses-inbound.ps1` owns the bucket policy, the active rule set `org-inbound` and the Lambda's `FORWARD_RULES`: a run replaces them with what its parameters say, so always pass the same `-ForwardTo` (it refuses to run without one unless `-NoForward`) and the full `-Addresses` list. Run `-WhatIf` first; it makes read-only AWS calls only.
+- The owner's forward mailbox is a run-time parameter; never commit it.
+- SES receives for, and the forwarder sends from, a domain only after its identity verifies. A new domain's DKIM CNAMEs are written on the first real run (SES issues the tokens then), so `-WhatIf` cannot show them.
+- PowerShell scripts in `aws/` are dot-sourced by their Pester tests (main code runs only when not dot-sourced); read script parameters as plain `$Name` in functions, never `$script:Name`, or the tests cannot set them.
+
+## Support contact
+
+`dotnet-deploy-ec2.yml` exports `SUPPORT_CONTACT` (input `support_contact`, else variable `SITE_PRIVACY_CONTACT`, else `support@<last two labels of full_hostname>`) and outputs it as `support_contact`; logic in `dotnet/ci/support-contact.sh`, details in [dotnet/ci/README.md](dotnet/ci/README.md#support-contact). The DevOps checkout in that workflow is unconditional because this step needs it.
+
 ## Checking changes
 
-There is no local CI. Syntax-check a changed script with `bash -n path/to/script.sh` and lint it with `MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/mnt:ro" -w /mnt koalaman/shellcheck:stable -x <files>`. Script tests: `bash dotnet/ci/tests/test-generate-appsettings.sh` (needs `jq`), `bash dotnet/ec2/tests/test-replace-site.sh`, and `ec2/nginx/tests/test-configure-subdomain.sh` inside a throwaway Ubuntu container (command in its header). Lint workflows, including their embedded shell, with `docker run --rm -v "$(pwd -W):/repo" -w /repo rhysd/actionlint:1.7.12 -no-color -oneline` from Git Bash (prefix `MSYS_NO_PATHCONV=1`); compare against `origin/main` because `dotnet-sonarqube-scan.yml` carries existing SC2086 notes. Workflow changes can only be proven by a run from a caller repo, so point a caller at the feature branch (`@<branch>` instead of `@main`) before merging.
+There is no local CI. Syntax-check a changed script with `bash -n path/to/script.sh` and lint it with `MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/mnt:ro" -w /mnt koalaman/shellcheck:stable -x <files>`. Script tests: `bash dotnet/ci/tests/test-generate-appsettings.sh` (needs `jq`), `bash dotnet/ci/tests/test-support-contact.sh`, `bash dotnet/ec2/tests/test-replace-site.sh`, `python -m unittest discover -s aws/ses-forwarder`, `Invoke-Pester aws/tests` (Pester 5; Windows ships 3.4, so `Save-Module Pester -Path Working/modules` and import it from there if it is not installed), and `ec2/nginx/tests/test-configure-subdomain.sh` inside a throwaway Ubuntu container (command in its header). Lint workflows, including their embedded shell, with `docker run --rm -v "$(pwd -W):/repo" -w /repo rhysd/actionlint:1.7.12 -no-color -oneline` from Git Bash (prefix `MSYS_NO_PATHCONV=1`); compare against `origin/main` because `dotnet-sonarqube-scan.yml` carries existing SC2086 notes. Workflow changes can only be proven by a run from a caller repo, so point a caller at the feature branch (`@<branch>` instead of `@main`) before merging.

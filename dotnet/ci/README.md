@@ -97,11 +97,12 @@ Filesystem + secret scan. Job name is `Trivy`. SARIF upload is best-effort (`con
 | `appsettings_env` | `""` | Newline-separated non-secret `KEY=VALUE` lines exported to the generate-appsettings step after its built-in variables, so they override them. Blank lines and `#` lines are skipped; a line without `=` or with an invalid name fails the step. Values are taken literally, never evaluated |
 | `appsettings_secret_names` | `""` | Space-separated secret names exported, masked, to the generate-appsettings step. A missing secret fails the step unless the name ends in `?` |
 | `ensure_redis` | `no` | `yes` runs `ec2/redis/ensure-redis.sh` from DevOps on the host before the deploy step |
-| `devops_ref` | `main` | DevOps ref checked out to `./DevOps` when `ensure_redis` is `yes`, `appsettings_template` is set, or a script input starts with `DevOps/` |
+| `devops_ref` | `main` | DevOps ref checked out to `./DevOps` on every run (helper scripts, the generator, [the support contact](#support-contact)) |
 | `appsettings_template` | `""` | Render this template with the [generic generator](#generic-appsettings-generator) instead of running `generate_appsettings_script`; `appsettings_env` and `appsettings_secret_names` still apply |
 | `appsettings_defaults` | `""` | Defaults file for `appsettings_template` |
 | `robots_path` | `""` | Repo-relative `robots.txt` path (e.g. `src/App.Web/wwwroot/robots.txt`); the workflow writes allow-all for production and disallow-all otherwise, and skips `generate_robots_script` |
 | `health_path` | `/` | Exported as `HEALTH_PATH` to `remote_deploy_script`; `deploy-to-ec2.sh` then expects HTTP 200 from it on the local port after `/health`, and the public check expects 200 from it after `/health` (empty: the public check uses `/`). Point it at an anonymous page when `/` redirects |
+| `support_contact` | `""` | Overrides the derived [support contact](#support-contact) |
 | `dll_name` | `""` | Exported as `DLL_NAME` to `remote_deploy_script`; `deploy-to-ec2.sh` needs it when the app dll is not `*.Web.dll` |
 | `restrict_appsettings` | `no` | `yes` sets `site/appsettings.json` to mode 600; the service must run as `ubuntu` |
 | `clean_site` | `no` | `yes` empties `site/` on the host before the copy. Without it the copy overlays the old build, so DLLs of removed packages linger, and Serilog.Settings.Configuration crashes at startup on a stale `*serilog*.dll` missing from `deps.json`. List every path the app writes at runtime under `site/` in `clean_site_keep`, or it is deleted (SSP keeps Data Protection keys in `site/data`; Family falls back to `wwwroot/uploads` when `Paths:Uploads` is empty) |
@@ -130,6 +131,22 @@ secrets: inherit
 ```
 
 The configure script receives `production` or `development` as its fifth argument, never `true`/`false`.
+
+### Support contact
+
+The deploy exports `SUPPORT_CONTACT` to the appsettings step and returns it as the workflow output `support_contact`. First non-empty wins:
+
+1. The `support_contact` input.
+2. The `SITE_PRIVACY_CONTACT` configuration variable (org, repo or environment).
+3. `support@` plus the last two labels of `full_hostname`: `music-dev.goom.life` gives `support@goom.life`, `app.goom.tech` gives `support@goom.tech`.
+
+`dotnet/ci/support-contact.sh` holds the logic. A hostname with no derivable domain (single label, IP address) leaves `SUPPORT_CONTACT` empty with a warning; an override that is not an email address fails the deploy. Two-label public suffixes (`example.co.uk`) are not recognised, so such sites pass `support_contact`. While the org variable `SITE_PRIVACY_CONTACT` is set, it overrides the derivation for every caller; delete it at org level (set it per repo where a domain has no mailbox) to let each site use its own domain. Mailboxes exist only for the domains `aws/ses-inbound.ps1` manages ([inbound mail](../../README.md#inbound-mail-ses)).
+
+`appsettings_env` runs after the built-ins and can still set the app's own key literally. To use the derived address, reference it from the defaults file, which expands environment variables, and drop the explicit `appsettings_env` line:
+
+```bash
+SITE_PRIVACY_CONTACT=${SUPPORT_CONTACT}
+```
 
 `configure_service_script` and `install_runtime_script` keep their app-local defaults (`scripts/...`) until every caller has moved, so pass the DevOps paths explicitly: `DevOps/ec2/nginx/configure-subdomain.sh` (needs `dll_name` unless the dll matches `*.Web.dll`) and `DevOps/dotnet/ec2/install-aspnetcore-runtime.sh`. `configure-subdomain.sh` validates its arguments, uses `DEPLOY_PATH` (exported by `deploy-to-ec2.sh`, must be under `/var/www/`) as the web root, and checks the nginx site with `nginx -t` before touching systemd: on failure it restores the previous site file and symlink, or removes new ones, and exits non-zero, failing the deploy.
 
@@ -170,7 +187,7 @@ PHOTOS_PREFIX_FROM_TELEMETRY=${PHOTOS_APP_NAME:+${TELEMETRY_ENVIRONMENT_NAME:+${
 PHOTOS_STORAGE_PREFIX=${PHOTOS_PREFIX_FROM_ENV:-${PHOTOS_PREFIX_FROM_TELEMETRY}}
 ```
 
-In `dotnet-deploy-ec2.yml` the generator sees the job environment (`FULL_HOSTNAME`, `DEPLOY_PATH`, `SERVICE_NAME`, `PORT`, `BRANCH`, `POSTGRES_CONNECTION_STRING`, the `GOOGLE_*` and `OPENTELEMETRY_*` secrets), the step's built-ins (`SERILOG_LOG_PATH`, `UPLOADS_PATH`, `PHOTOS_*`, `S3_PHOTOS_BUCKET`, `TELEMETRY_ENVIRONMENT_NAME`), then `appsettings_env` and `appsettings_secret_names`. With `appsettings_template`, `IS_PRODUCTION` is `true` or `false` (from `is_production`), so `"IsProduction": ^^IS_PRODUCTION^^` needs no tracked value. Lint, Sonar and CodeQL run it without secrets, so the defaults file must resolve every token there.
+In `dotnet-deploy-ec2.yml` the generator sees the job environment (`FULL_HOSTNAME`, `DEPLOY_PATH`, `SERVICE_NAME`, `PORT`, `BRANCH`, `POSTGRES_CONNECTION_STRING`, the `GOOGLE_*` and `OPENTELEMETRY_*` secrets), the step's built-ins (`SERILOG_LOG_PATH`, `UPLOADS_PATH`, `PHOTOS_*`, `S3_PHOTOS_BUCKET`, `TELEMETRY_ENVIRONMENT_NAME`, `SUPPORT_CONTACT`), then `appsettings_env` and `appsettings_secret_names`. With `appsettings_template`, `IS_PRODUCTION` is `true` or `false` (from `is_production`), so `"IsProduction": ^^IS_PRODUCTION^^` needs no tracked value. Lint, Sonar and CodeQL run it without secrets, so the defaults file must resolve every token there.
 
 Local development: keep a thin `scripts/generate-appsettings.sh` that calls a sibling DevOps checkout, overridable with `DEVOPS_DIR`:
 
@@ -183,4 +200,4 @@ web="$repo_root/src/App.Web"
 exec bash "$devops_dir/dotnet/ci/generate-appsettings.sh" "$web/appsettings.json.template" "$web/appsettings.json" "$web/appsettings.defaults.env"
 ```
 
-Tests: `bash dotnet/ci/tests/test-generate-appsettings.sh` (needs `jq`) and `bash dotnet/ec2/tests/test-replace-site.sh`.
+Tests: `bash dotnet/ci/tests/test-generate-appsettings.sh` (needs `jq`), `bash dotnet/ci/tests/test-support-contact.sh` and `bash dotnet/ec2/tests/test-replace-site.sh`.
